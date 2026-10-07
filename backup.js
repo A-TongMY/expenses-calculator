@@ -1,22 +1,13 @@
+import { isMoney, isValidCommitment } from "./rules.js";
+
 const SCHEMA_VERSION = 1;
-
-const isMoney = (value) => Number.isFinite(value) && value >= 0;
-
-function isCommitment(c) {
-  return (
-    typeof c?.id === "string" &&
-    typeof c?.name === "string" &&
-    isMoney(c?.amount) &&
-    Number.isInteger(c?.everyMonths) &&
-    c.everyMonths >= 1
-  );
-}
 
 function isState(data) {
   return (
     isMoney(data?.income) &&
     Array.isArray(data?.commitments) &&
-    data.commitments.every(isCommitment)
+    data.commitments.every(isValidCommitment) &&
+    new Set(data.commitments.map((c) => c.id)).size === data.commitments.length
   );
 }
 
@@ -31,15 +22,25 @@ export function importBackup(file) {
   } catch {
     throw new Error("This file is not a valid backup: it is not JSON.");
   }
-  if (parsed?.schemaVersion > SCHEMA_VERSION) {
+  const version = parsed?.schemaVersion;
+  if (Number.isInteger(version) && version > SCHEMA_VERSION) {
     throw new Error(
       "This backup was made by a newer version of the app and cannot be imported.",
     );
   }
-  if (!isState(parsed?.data)) {
+  if (version !== SCHEMA_VERSION || !isState(parsed?.data)) {
     throw new Error(
       "This file is not a valid backup: the data is not in the expected shape.",
     );
   }
-  return parsed.data;
+  const { income, commitments } = parsed.data;
+  return {
+    income,
+    commitments: commitments.map(({ id, name, amount, everyMonths }) => ({
+      id,
+      name,
+      amount,
+      everyMonths,
+    })),
+  };
 }

@@ -10,7 +10,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     --bg: #161614;
     --surface: #20201e;
     --text: #ecece8;
@@ -110,3 +110,11 @@ button.danger { color: var(--negative); border-color: var(--negative); backgroun
 .item-cost { font-variant-numeric: tabular-nums; }
 
 .muted { color: var(--muted); font-size: 0.9rem; }
+
+.notice {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--negative);
+  border-radius: 0.75rem;
+  background: var(--surface);
+}

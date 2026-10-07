@@ -11,6 +11,8 @@
   <main>
     <h1>Expenses Calculator</h1>
 
+    <p id="storage-notice" class="notice" role="alert" hidden></p>
+
     <section class="summary" aria-labelledby="summary-heading">
       <h2 id="summary-heading" class="visually-hidden">Summary</h2>
       <label class="field">
@@ -38,7 +40,7 @@
         <h3 id="form-heading">Add a commitment</h3>
         <label class="field">
           <span>Name</span>
-          <input id="name" type="text" required maxlength="80" placeholder="e.g. Rent" autocomplete="off">
+          <input id="name" type="text" required placeholder="e.g. Rent" autocomplete="off">
         </label>
         <label class="field">
           <span>Amount (MYR)</span>

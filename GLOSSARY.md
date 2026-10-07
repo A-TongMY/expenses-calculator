@@ -20,8 +20,12 @@ _Avoid_: Bill, fixed expense, obligation
 A discretionary Expense you could choose to cut, such as food, fuel or a salon visit. It may be irregular and is entered as a range.
 _Avoid_: Daily spending, variable expense, other
 
+**Cadence**:
+How often an Expense is paid: every month, every year, or every N months.
+_Avoid_: Frequency, interval, recurrence
+
 **Monthly cost**:
-The amount an Expense contributes to a single month, after spreading it over its cadence (a 150 MYR visit every 3 months costs 50 a month).
+An Expense's amount divided evenly over its Cadence: what it costs in a single month (150 MYR every 3 months is 50 a month).
 _Avoid_: Amortized amount, average
 
 **Check-in**:
@@ -29,7 +33,7 @@ An optional month-end entry of what was actually spent per Lifestyle spending it
 _Avoid_: Log, transaction, reconciliation
 
 **Scenario**:
-A Commitment being considered but not yet real. It can be switched on or off to see its effect, and promoted to a real Commitment.
+A Commitment that is being considered but is not yet real.
 _Avoid_: What-if, draft, simulation, prospective commitment
 
 **Projection**:
@@ -37,5 +41,5 @@ The month-by-month Remaining over the coming months, honouring each Expense's st
 _Avoid_: Forecast, timeline
 
 **Remaining**:
-What is left of the Income after all Expenses, shown as a range from best case to worst case.
+What is left of the Income after all Expenses.
 _Avoid_: Balance, surplus, savings

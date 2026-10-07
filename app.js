@@ -1,5 +1,11 @@
 import { monthlyCost, remaining, totalMonthlyCost } from "./calc.js";
 import { exportBackup, importBackup } from "./backup.js";
+import {
+  MAX_AMOUNT,
+  MAX_EVERY_MONTHS,
+  MAX_NAME_LENGTH,
+  isValidCommitment,
+} from "./rules.js";
 
 const STORAGE_KEY = "expenses-calculator";
 
@@ -7,6 +13,7 @@ const money = new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR
 
 const $ = (id) => document.getElementById(id);
 const els = {
+  notice: $("storage-notice"),
   income: $("income"),
   totalCommitments: $("total-commitments"),
   remaining: $("remaining"),
@@ -27,29 +34,77 @@ const els = {
   backupMessage: $("backup-message"),
 };
 
+els.income.max = MAX_AMOUNT;
+els.amount.max = MAX_AMOUNT;
+els.customMonths.max = MAX_EVERY_MONTHS;
+els.name.maxLength = MAX_NAME_LENGTH;
+
 let state = loadState();
 let editingId = null;
+let saveFailed = false;
 
-function emptyState() {
+function blankState() {
   return { income: 0, commitments: [] };
 }
 
-function loadState() {
+function showNotice(message) {
+  els.notice.textContent = message;
+  els.notice.hidden = false;
+}
+
+function hideNotice() {
+  els.notice.hidden = true;
+}
+
+function keepUnreadableCopy(saved) {
+  const key = `${STORAGE_KEY}:unreadable:${new Date().toISOString()}`;
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return importBackup(saved);
+    localStorage.setItem(key, saved);
+    return key;
   } catch {
-    // Unreadable or blocked storage: start fresh.
+    return null;
   }
-  return emptyState();
+}
+
+function loadState() {
+  let saved;
+  try {
+    saved = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    showNotice("This browser is blocking storage, so changes will not be saved. Use Export backup to keep your data.");
+    return blankState();
+  }
+  if (!saved) return blankState();
+  try {
+    return importBackup(saved);
+  } catch {
+    const key = keepUnreadableCopy(saved);
+    showNotice(
+      key
+        ? `Your saved data could not be read, so the app started empty. The original was kept untouched in this browser (storage key "${key}").`
+        : "Your saved data could not be read, so the app started empty, and a copy could not be kept. Do not make changes if you want to recover it.",
+    );
+    return blankState();
+  }
 }
 
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, exportBackup(state));
+    if (saveFailed) {
+      saveFailed = false;
+      hideNotice();
+    }
+    return true;
   } catch {
-    showBackupMessage("Could not save to this browser. Export a backup to keep your data.");
+    saveFailed = true;
+    showNotice("Could not save to this browser. Use Export backup to keep your data.");
+    return false;
   }
+}
+
+function findCommitment(id) {
+  return state.commitments.find((c) => c.id === id);
 }
 
 function cadenceLabel(everyMonths) {
@@ -116,8 +171,14 @@ function render() {
   renderList();
 }
 
+function syncIncomeField() {
+  els.income.value = state.income > 0 ? state.income : "";
+}
+
 function syncCustomField() {
-  els.customField.hidden = els.cadence.value !== "custom";
+  const custom = els.cadence.value === "custom";
+  els.customField.hidden = !custom;
+  els.customMonths.disabled = !custom;
 }
 
 function resetForm() {
@@ -130,7 +191,7 @@ function resetForm() {
 }
 
 function startEdit(id) {
-  const commitment = state.commitments.find((c) => c.id === id);
+  const commitment = findCommitment(id);
   if (!commitment) return;
   editingId = id;
   els.name.value = commitment.name;
@@ -149,7 +210,7 @@ function startEdit(id) {
 }
 
 function deleteCommitment(id) {
-  const commitment = state.commitments.find((c) => c.id === id);
+  const commitment = findCommitment(id);
   if (!commitment || !confirm(`Delete "${commitment.name}"?`)) return;
   state = { ...state, commitments: state.commitments.filter((c) => c.id !== id) };
   if (editingId === id) resetForm();
@@ -161,41 +222,41 @@ function showBackupMessage(message) {
   els.backupMessage.textContent = message;
 }
 
-els.income.value = state.income > 0 ? state.income : "";
+syncIncomeField();
+syncCustomField();
 
 els.income.addEventListener("input", () => {
   const value = Number(els.income.value);
-  state = { ...state, income: Number.isFinite(value) && value > 0 ? value : 0 };
+  state = { ...state, income: Number.isFinite(value) && value > 0 ? Math.min(value, MAX_AMOUNT) : 0 };
   saveState();
   renderSummary();
 });
 
+els.income.addEventListener("change", syncIncomeField);
+
 els.cadence.addEventListener("change", syncCustomField);
+
+els.name.addEventListener("input", () => els.name.setCustomValidity(""));
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
-  const everyMonths = readEveryMonths();
-  const amount = Number(els.amount.value);
-  const name = els.name.value.trim();
-  if (!name || !Number.isFinite(amount) || amount < 0) return;
-  if (!Number.isInteger(everyMonths) || everyMonths < 1) {
-    els.customMonths.setCustomValidity("Enter a whole number of months, 1 or more.");
-    els.customMonths.reportValidity();
-    els.customMonths.setCustomValidity("");
-    return;
-  }
+  els.name.setCustomValidity(els.name.value.trim() ? "" : "Enter a name.");
+  if (!els.form.reportValidity()) return;
 
-  if (editingId) {
-    state = {
-      ...state,
-      commitments: state.commitments.map((c) =>
-        c.id === editingId ? { ...c, name, amount, everyMonths } : c,
-      ),
-    };
-  } else {
-    const commitment = { id: crypto.randomUUID(), name, amount, everyMonths };
-    state = { ...state, commitments: [...state.commitments, commitment] };
-  }
+  const commitment = {
+    id: editingId ?? crypto.randomUUID(),
+    name: els.name.value.trim(),
+    amount: Number(els.amount.value),
+    everyMonths: readEveryMonths(),
+  };
+  if (!isValidCommitment(commitment)) return;
+
+  state = {
+    ...state,
+    commitments: editingId
+      ? state.commitments.map((c) => (c.id === editingId ? commitment : c))
+      : [...state.commitments, commitment],
+  };
   saveState();
   resetForm();
   render();
@@ -228,11 +289,15 @@ els.importFile.addEventListener("change", async () => {
       return;
     }
     state = imported;
-    saveState();
-    els.income.value = state.income > 0 ? state.income : "";
+    const saved = saveState();
+    syncIncomeField();
     resetForm();
     render();
-    showBackupMessage("Backup imported.");
+    showBackupMessage(
+      saved
+        ? "Backup imported."
+        : "Backup imported for this session only. It could not be saved in this browser.",
+    );
   } catch (error) {
     showBackupMessage(error.message);
   }

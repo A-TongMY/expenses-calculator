@@ -41,3 +41,20 @@ test("the total of commitments is their summed monthly cost, rounded to the sen"
   ]);
   assert.equal(total, 100.3);
 });
+
+test("a monthly cost that does not divide evenly is rounded to the sen", () => {
+  assert.equal(monthlyCost({ amount: 100, everyMonths: 3 }), 33.33);
+});
+
+test("a cost that lands exactly halfway between two sen rounds up", () => {
+  assert.equal(monthlyCost({ amount: 1.005, everyMonths: 1 }), 1.01);
+});
+
+test("the monthly costs shown for each row add up to the total", () => {
+  const rows = [
+    { amount: 100, everyMonths: 3 },
+    { amount: 100, everyMonths: 3 },
+    { amount: 100, everyMonths: 3 },
+  ];
+  assert.equal(totalMonthlyCost(rows), 99.99);
+});

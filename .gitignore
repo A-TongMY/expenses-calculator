@@ -1,0 +1,4 @@
+.claude/
+node_modules/
+*.backup.json
+expenses-backup*.json

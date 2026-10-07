@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expenses Calculator</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <h1>Expenses Calculator</h1>
+
+    <section class="summary" aria-labelledby="summary-heading">
+      <h2 id="summary-heading" class="visually-hidden">Summary</h2>
+      <label class="field">
+        <span>Monthly income (MYR)</span>
+        <input id="income" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off">
+      </label>
+      <dl class="figures">
+        <div>
+          <dt>Commitments per month</dt>
+          <dd id="total-commitments">RM 0.00</dd>
+        </div>
+        <div class="remaining">
+          <dt>Remaining</dt>
+          <dd id="remaining">RM 0.00</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section aria-labelledby="commitments-heading">
+      <h2 id="commitments-heading">Commitments</h2>
+      <ul id="commitment-list" class="items"></ul>
+      <p id="empty-state" class="muted" hidden>No commitments yet. Add your first one below.</p>
+
+      <form id="commitment-form" class="card" autocomplete="off">
+        <h3 id="form-heading">Add a commitment</h3>
+        <label class="field">
+          <span>Name</span>
+          <input id="name" type="text" required maxlength="80" placeholder="e.g. Rent" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Amount (MYR)</span>
+          <input id="amount" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+        </label>
+        <label class="field">
+          <span>Paid</span>
+          <select id="cadence">
+            <option value="1">Every month</option>
+            <option value="12">Every year</option>
+            <option value="custom">Every N months…</option>
+          </select>
+        </label>
+        <label class="field" id="custom-field" hidden>
+          <span>Number of months between payments</span>
+          <input id="custom-months" type="number" min="1" step="1" inputmode="numeric" value="3">
+        </label>
+        <div class="actions">
+          <button type="submit" id="submit-button">Add commitment</button>
+          <button type="button" id="cancel-edit" class="secondary" hidden>Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <section aria-labelledby="backup-heading">
+      <h2 id="backup-heading">Backup</h2>
+      <p class="muted">Your data lives only in this browser. Export a file to keep a copy or move it to another device. Never commit the file to a public repository.</p>
+      <div class="actions">
+        <button type="button" id="export-button" class="secondary">Export backup</button>
+        <button type="button" id="import-button" class="secondary">Import backup…</button>
+        <input id="import-file" type="file" accept="application/json,.json" autocomplete="off" hidden>
+      </div>
+      <p id="backup-message" class="muted" role="status"></p>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

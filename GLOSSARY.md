@@ -17,7 +17,7 @@ A fixed-amount obligation, either recurring indefinitely or ending on a date.
 _Avoid_: Bill, fixed expense, obligation
 
 **Lifestyle spending**:
-A discretionary Expense you could choose to cut, such as food, fuel or a salon visit. It may be irregular and is entered as a range.
+A discretionary Expense you could choose to cut, such as food, fuel or a salon visit. It may be irregular and is entered as a low and a high estimate.
 _Avoid_: Daily spending, variable expense, other
 
 **Cadence**:
@@ -37,9 +37,9 @@ A Commitment that is being considered but is not yet real.
 _Avoid_: What-if, draft, simulation, prospective commitment
 
 **Projection**:
-The month-by-month Remaining over the coming months, honouring each Expense's start and end dates.
+Remaining worked out for each of the coming months, honouring each Expense's start and end dates.
 _Avoid_: Forecast, timeline
 
 **Remaining**:
-What is left of the Income after all Expenses.
+What is left of the Income after all Expenses, as a span from the best case (every Lifestyle spending item at its low estimate) to the worst case (every item at its high estimate).
 _Avoid_: Balance, surplus, savings

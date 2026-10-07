@@ -6,10 +6,30 @@ export function monthlyCost({ amount, everyMonths }) {
   return roundToSen(amount / everyMonths);
 }
 
+export function lifestyleMonthlyCost({ low, high, everyMonths }) {
+  return {
+    low: monthlyCost({ amount: low, everyMonths }),
+    high: monthlyCost({ amount: high, everyMonths }),
+  };
+}
+
+export function totalLifestyleCost(items) {
+  const costs = items.map(lifestyleMonthlyCost);
+  return {
+    low: roundToSen(costs.reduce((sum, cost) => sum + cost.low, 0)),
+    high: roundToSen(costs.reduce((sum, cost) => sum + cost.high, 0)),
+  };
+}
+
 export function totalMonthlyCost(commitments) {
   return roundToSen(commitments.reduce((sum, c) => sum + monthlyCost(c), 0));
 }
 
-export function remaining({ income, commitments }) {
-  return roundToSen(income - totalMonthlyCost(commitments));
+export function remaining({ income, commitments, lifestyle }) {
+  const afterCommitments = income - totalMonthlyCost(commitments);
+  const lifestyleCost = totalLifestyleCost(lifestyle);
+  return {
+    best: roundToSen(afterCommitments - lifestyleCost.low),
+    worst: roundToSen(afterCommitments - lifestyleCost.high),
+  };
 }

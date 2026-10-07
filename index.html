@@ -17,50 +17,97 @@
       <h2 id="summary-heading" class="visually-hidden">Summary</h2>
       <label class="field">
         <span>Monthly income (MYR)</span>
-        <input id="income" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off">
+        <input id="income" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
       </label>
       <dl class="figures">
         <div>
           <dt>Commitments per month</dt>
           <dd id="total-commitments">RM 0.00</dd>
         </div>
+        <div>
+          <dt>Lifestyle spending per month</dt>
+          <dd id="total-lifestyle">RM 0.00</dd>
+        </div>
         <div class="remaining">
           <dt>Remaining</dt>
           <dd id="remaining">RM 0.00</dd>
+          <dd id="remaining-hint" class="hint" hidden>worst case to best case</dd>
         </div>
       </dl>
     </section>
 
-    <section aria-labelledby="commitments-heading">
+    <section data-kind="commitments" aria-labelledby="commitments-heading">
       <h2 id="commitments-heading">Commitments</h2>
-      <ul id="commitment-list" class="items"></ul>
-      <p id="empty-state" class="muted" hidden>No commitments yet. Add your first one below.</p>
+      <p class="muted">Fixed obligations: rent, loans, insurance, subscriptions.</p>
+      <ul class="items" data-role="list"></ul>
+      <p class="muted" data-role="empty" hidden>No commitments yet. Add your first one below.</p>
 
-      <form id="commitment-form" class="card" autocomplete="off">
-        <h3 id="form-heading">Add a commitment</h3>
+      <form class="card" data-role="form" autocomplete="off">
+        <h3 data-role="form-heading">Add a commitment</h3>
         <label class="field">
           <span>Name</span>
-          <input id="name" type="text" required placeholder="e.g. Rent" autocomplete="off">
+          <input name="name" type="text" required placeholder="e.g. Rent" autocomplete="off" data-limit="name">
         </label>
         <label class="field">
           <span>Amount (MYR)</span>
-          <input id="amount" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+          <input name="amount" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
         </label>
         <label class="field">
           <span>Paid</span>
-          <select id="cadence">
+          <select name="cadence">
             <option value="1">Every month</option>
             <option value="12">Every year</option>
             <option value="custom">Every N months…</option>
           </select>
         </label>
-        <label class="field" id="custom-field" hidden>
+        <label class="field" data-role="custom-field" hidden>
           <span>Number of months between payments</span>
-          <input id="custom-months" type="number" min="1" step="1" inputmode="numeric" value="3">
+          <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
         </label>
         <div class="actions">
-          <button type="submit" id="submit-button">Add commitment</button>
-          <button type="button" id="cancel-edit" class="secondary" hidden>Cancel</button>
+          <button type="submit" data-role="submit">Add commitment</button>
+          <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <section data-kind="lifestyle" aria-labelledby="lifestyle-heading">
+      <h2 id="lifestyle-heading">Lifestyle spending</h2>
+      <p class="muted">Things you could cut and that vary: food, fuel, eating out, a salon visit every few months. Enter a low and a high estimate.</p>
+      <ul class="items" data-role="list"></ul>
+      <p class="muted" data-role="empty" hidden>No lifestyle spending yet. Add your first one below.</p>
+
+      <form class="card" data-role="form" autocomplete="off">
+        <h3 data-role="form-heading">Add lifestyle spending</h3>
+        <label class="field">
+          <span>Name</span>
+          <input name="name" type="text" required placeholder="e.g. Food" autocomplete="off" data-limit="name">
+        </label>
+        <div class="pair">
+          <label class="field">
+            <span>Low estimate (MYR)</span>
+            <input name="low" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+          </label>
+          <label class="field">
+            <span>High estimate (MYR)</span>
+            <input name="high" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+          </label>
+        </div>
+        <label class="field">
+          <span>Paid</span>
+          <select name="cadence">
+            <option value="1">Every month</option>
+            <option value="12">Every year</option>
+            <option value="custom">Every N months…</option>
+          </select>
+        </label>
+        <label class="field" data-role="custom-field" hidden>
+          <span>Number of months between payments</span>
+          <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
+        </label>
+        <div class="actions">
+          <button type="submit" data-role="submit">Add lifestyle spending</button>
+          <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
         </div>
       </form>
     </section>

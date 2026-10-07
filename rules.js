@@ -5,15 +5,22 @@ export const MAX_NAME_LENGTH = 80;
 export const isMoney = (value) =>
   Number.isFinite(value) && value >= 0 && value <= MAX_AMOUNT;
 
-export function isValidCommitment(commitment) {
-  return (
-    typeof commitment?.id === "string" &&
-    typeof commitment?.name === "string" &&
-    commitment.name.trim().length > 0 &&
-    commitment.name.length <= MAX_NAME_LENGTH &&
-    isMoney(commitment.amount) &&
-    Number.isInteger(commitment.everyMonths) &&
-    commitment.everyMonths >= 1 &&
-    commitment.everyMonths <= MAX_EVERY_MONTHS
-  );
-}
+const isName = (name) =>
+  typeof name === "string" && name.trim().length > 0 && name.length <= MAX_NAME_LENGTH;
+
+const isCadence = (everyMonths) =>
+  Number.isInteger(everyMonths) && everyMonths >= 1 && everyMonths <= MAX_EVERY_MONTHS;
+
+export const isValidCommitment = (commitment) =>
+  typeof commitment?.id === "string" &&
+  isName(commitment.name) &&
+  isMoney(commitment.amount) &&
+  isCadence(commitment.everyMonths);
+
+export const isValidLifestyle = (item) =>
+  typeof item?.id === "string" &&
+  isName(item.name) &&
+  isMoney(item.low) &&
+  isMoney(item.high) &&
+  item.low <= item.high &&
+  isCadence(item.everyMonths);

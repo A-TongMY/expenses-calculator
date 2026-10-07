@@ -33,3 +33,46 @@ export function remaining({ income, commitments, lifestyle }) {
     worst: roundToSen(afterCommitments - lifestyleCost.high),
   };
 }
+
+const MIN_PROJECTION_MONTHS = 12;
+const MAX_PROJECTION_MONTHS = 24;
+
+const monthIndex = (month) => {
+  const [year, number] = month.split("-").map(Number);
+  return year * 12 + (number - 1);
+};
+
+const monthAt = (index) =>
+  `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+
+const activeIn = (items, month) =>
+  items.filter(
+    ({ startMonth, endMonth }) =>
+      (!startMonth || startMonth <= month) && (!endMonth || month <= endMonth),
+  );
+
+export function projection({ income, commitments, lifestyle }, fromMonth) {
+  const from = monthIndex(fromMonth);
+  const endIndexes = [...commitments, ...lifestyle]
+    .filter(({ endMonth }) => endMonth)
+    .map(({ endMonth }) => monthIndex(endMonth));
+  const latestEnd = Math.max(from, ...endIndexes);
+  const length = Math.min(
+    MAX_PROJECTION_MONTHS,
+    Math.max(MIN_PROJECTION_MONTHS, latestEnd - from + 1),
+  );
+  return Array.from({ length }, (_, offset) => {
+    const month = monthAt(from + offset);
+    const activeCommitments = activeIn(commitments, month);
+    const activeLifestyle = activeIn(lifestyle, month);
+    return {
+      month,
+      commitments: totalMonthlyCost(activeCommitments),
+      lifestyle: totalLifestyleCost(activeLifestyle),
+      ...remaining({ income, commitments: activeCommitments, lifestyle: activeLifestyle }),
+    };
+  });
+}
+
+export const tightestMonth = (months) =>
+  months.reduce((tightest, month) => (month.worst < tightest.worst ? month : tightest));

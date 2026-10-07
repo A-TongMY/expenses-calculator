@@ -1,6 +1,12 @@
 import { isMoney, isValidCommitment, isValidLifestyle } from "./rules.js";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+
+const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth"];
+const LIFESTYLE_FIELDS = ["id", "name", "low", "high", "everyMonths", "startMonth", "endMonth"];
+
+const pick = (item, fields) =>
+  Object.fromEntries(fields.filter((field) => item[field] !== undefined).map((field) => [field, item[field]]));
 
 const isValidList = (items, isValid) =>
   Array.isArray(items) &&
@@ -32,7 +38,7 @@ export function importBackup(file) {
       "This backup was made by a newer version of the app and cannot be imported.",
     );
   }
-  if ((version !== 1 && version !== 2) || !isState(parsed?.data, version)) {
+  if (!Number.isInteger(version) || version < 1 || !isState(parsed?.data, version)) {
     throw new Error(
       "This file is not a valid backup: the data is not in the expected shape.",
     );
@@ -41,18 +47,7 @@ export function importBackup(file) {
   const lifestyle = version === 1 ? [] : parsed.data.lifestyle;
   return {
     income,
-    commitments: commitments.map(({ id, name, amount, everyMonths }) => ({
-      id,
-      name,
-      amount,
-      everyMonths,
-    })),
-    lifestyle: lifestyle.map(({ id, name, low, high, everyMonths }) => ({
-      id,
-      name,
-      low,
-      high,
-      everyMonths,
-    })),
+    commitments: commitments.map((item) => pick(item, COMMITMENT_FIELDS)),
+    lifestyle: lifestyle.map((item) => pick(item, LIFESTYLE_FIELDS)),
   };
 }

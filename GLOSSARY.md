@@ -24,6 +24,14 @@ _Avoid_: Daily spending, variable expense, other
 How often an Expense is paid: every month, every year, or every N months.
 _Avoid_: Frequency, interval, recurrence
 
+**Start month**:
+The first month an Expense counts toward Remaining. An Expense without one already counts.
+_Avoid_: Start date, begins
+
+**End month**:
+The last month an Expense counts toward Remaining, inclusive. An Expense without one never stops.
+_Avoid_: End date, expiry
+
 **Monthly cost**:
 An Expense's amount divided evenly over its Cadence: what it costs in a single month (150 MYR every 3 months is 50 a month).
 _Avoid_: Amortized amount, average
@@ -37,8 +45,12 @@ A Commitment that is being considered but is not yet real.
 _Avoid_: What-if, draft, simulation, prospective commitment
 
 **Projection**:
-Remaining worked out for each of the coming months, honouring each Expense's start and end dates.
+Remaining worked out for each of the coming months, honouring each Expense's Start month and End month.
 _Avoid_: Forecast, timeline
+
+**Tightest month**:
+The month in the Projection with the lowest worst case.
+_Avoid_: Worst month, low point
 
 **Remaining**:
 What is left of the Income after all Expenses, as a span from the best case (every Lifestyle spending item at its low estimate) to the worst case (every item at its high estimate).

@@ -123,3 +123,25 @@ button.danger { color: var(--negative); border-color: var(--negative); backgroun
 .pair { display: grid; gap: 0 0.75rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
 
 .figures dd.hint { color: var(--muted); font-size: 0.85rem; font-weight: 400; }
+
+.tightest-note { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.9rem; }
+
+.table-wrap { overflow-x: auto; }
+
+.projection { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.projection th, .projection td { padding: 0.45rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
+.projection thead th { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.projection tbody th { font-weight: 400; white-space: nowrap; }
+.projection td.negative { color: var(--negative); }
+.projection tr.tightest th, .projection tr.tightest td { font-weight: 600; }
+
+.badge {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--muted);
+  border-radius: 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}

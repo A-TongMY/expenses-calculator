@@ -11,11 +11,19 @@ const isName = (name) =>
 const isCadence = (everyMonths) =>
   Number.isInteger(everyMonths) && everyMonths >= 1 && everyMonths <= MAX_EVERY_MONTHS;
 
+export const isMonth = (value) => typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+
+const isPeriod = ({ startMonth, endMonth }) =>
+  (startMonth === undefined || isMonth(startMonth)) &&
+  (endMonth === undefined || isMonth(endMonth)) &&
+  (startMonth === undefined || endMonth === undefined || startMonth <= endMonth);
+
 export const isValidCommitment = (commitment) =>
   typeof commitment?.id === "string" &&
   isName(commitment.name) &&
   isMoney(commitment.amount) &&
-  isCadence(commitment.everyMonths);
+  isCadence(commitment.everyMonths) &&
+  isPeriod(commitment);
 
 export const isValidLifestyle = (item) =>
   typeof item?.id === "string" &&
@@ -23,4 +31,5 @@ export const isValidLifestyle = (item) =>
   isMoney(item.low) &&
   isMoney(item.high) &&
   item.low <= item.high &&
-  isCadence(item.everyMonths);
+  isCadence(item.everyMonths) &&
+  isPeriod(item);

@@ -21,19 +21,33 @@
       </label>
       <dl class="figures">
         <div>
-          <dt>Commitments per month</dt>
+          <dt>Commitments this month</dt>
           <dd id="total-commitments">RM 0.00</dd>
         </div>
         <div>
-          <dt>Lifestyle spending per month</dt>
+          <dt>Lifestyle spending this month</dt>
           <dd id="total-lifestyle">RM 0.00</dd>
         </div>
         <div class="remaining">
-          <dt>Remaining</dt>
+          <dt>Remaining this month</dt>
           <dd id="remaining">RM 0.00</dd>
           <dd id="remaining-hint" class="hint" hidden>worst case to best case</dd>
         </div>
       </dl>
+      <p id="tightest" class="tightest-note"></p>
+    </section>
+
+    <section aria-labelledby="projection-heading">
+      <h2 id="projection-heading">Projection</h2>
+      <p class="muted">What remains each month, honouring start and end months. Costs paid every few months are spread evenly.</p>
+      <div class="table-wrap">
+        <table class="projection">
+          <thead>
+            <tr><th scope="col">Month</th><th scope="col">Remaining (worst case to best case)</th></tr>
+          </thead>
+          <tbody id="projection-body"></tbody>
+        </table>
+      </div>
     </section>
 
     <section data-kind="commitments" aria-labelledby="commitments-heading">
@@ -64,6 +78,16 @@
           <span>Number of months between payments</span>
           <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
         </label>
+        <div class="pair">
+          <label class="field">
+            <span>Starts (optional)</span>
+            <input name="startMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Ends (optional)</span>
+            <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+          </label>
+        </div>
         <div class="actions">
           <button type="submit" data-role="submit">Add commitment</button>
           <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
@@ -105,6 +129,16 @@
           <span>Number of months between payments</span>
           <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
         </label>
+        <div class="pair">
+          <label class="field">
+            <span>Starts (optional)</span>
+            <input name="startMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Ends (optional)</span>
+            <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+          </label>
+        </div>
         <div class="actions">
           <button type="submit" data-role="submit">Add lifestyle spending</button>
           <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>

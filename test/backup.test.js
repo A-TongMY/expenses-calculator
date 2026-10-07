@@ -6,11 +6,11 @@ const sampleState = {
   income: 5000,
   commitments: [
     { id: "c1", name: "Rent", amount: 1500, everyMonths: 1 },
-    { id: "c2", name: "Car insurance", amount: 1200, everyMonths: 12 },
+    { id: "c2", name: "Car insurance", amount: 1200, everyMonths: 12, endMonth: "2028-06" },
   ],
   lifestyle: [
     { id: "l1", name: "Food", low: 400, high: 600, everyMonths: 1 },
-    { id: "l2", name: "Salon", low: 120, high: 210, everyMonths: 3 },
+    { id: "l2", name: "Salon", low: 120, high: 210, everyMonths: 3, startMonth: "2027-01" },
   ],
 };
 
@@ -24,7 +24,7 @@ const stateWith = (overrides) => ({
   ...overrides,
 });
 
-const backupOf = (data, schemaVersion = 2) => JSON.stringify({ schemaVersion, data });
+const backupOf = (data, schemaVersion = 3) => JSON.stringify({ schemaVersion, data });
 
 test("a backup can be imported back into exactly the state that was exported", () => {
   const file = exportBackup(sampleState);
@@ -32,7 +32,7 @@ test("a backup can be imported back into exactly the state that was exported", (
 });
 
 test("exporting writes the current schema version", () => {
-  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 2);
+  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 3);
 });
 
 test("a version 1 backup, from before lifestyle spending existed, still imports", () => {
@@ -50,14 +50,14 @@ test("importing something that is not JSON is rejected with a clear message", ()
 });
 
 test("a backup from a newer version of the app is refused", () => {
-  assert.throws(() => importBackup(backupOf(sampleState, 3)), {
+  assert.throws(() => importBackup(backupOf(sampleState, 4)), {
     message: "This backup was made by a newer version of the app and cannot be imported.",
   });
 });
 
 const notBackups = {
   "an empty object": "{}",
-  "no data": JSON.stringify({ schemaVersion: 2 }),
+  "no data": JSON.stringify({ schemaVersion: 3 }),
   "no schemaVersion": JSON.stringify({ data: sampleState }),
   "a schemaVersion that is not a number": backupOf(sampleState, "abc"),
   "a schemaVersion of zero": backupOf(sampleState, 0),
@@ -78,6 +78,13 @@ const notBackups = {
   "a lifestyle high above the limit": backupOf(stateWith({ lifestyle: [{ ...food, high: 1_000_000_001 }] })),
   "duplicate lifestyle ids": backupOf(stateWith({ lifestyle: [food, { ...food, name: "Fuel" }] })),
   "a blank lifestyle name": backupOf(stateWith({ lifestyle: [{ ...food, name: "" }] })),
+  "a start month that is not a real month": backupOf(stateWith({ commitments: [{ ...rent, startMonth: "2026-13" }] })),
+  "a start month without the leading zero": backupOf(stateWith({ commitments: [{ ...rent, startMonth: "2026-1" }] })),
+  "an end month that is a number": backupOf(stateWith({ commitments: [{ ...rent, endMonth: 202612 }] })),
+  "an end month that is null": backupOf(stateWith({ commitments: [{ ...rent, endMonth: null }] })),
+  "a commitment ending before it starts": backupOf(stateWith({ commitments: [{ ...rent, startMonth: "2027-03", endMonth: "2027-02" }] })),
+  "a lifestyle start month that is not a real month": backupOf(stateWith({ lifestyle: [{ ...food, startMonth: "2026-00" }] })),
+  "a lifestyle item ending before it starts": backupOf(stateWith({ lifestyle: [{ ...food, startMonth: "2027-03", endMonth: "2027-02" }] })),
   "a lifestyle cadence of zero months": backupOf(stateWith({ lifestyle: [{ ...food, everyMonths: 0 }] })),
 };
 
@@ -119,3 +126,13 @@ for (const [label, lifestyle] of Object.entries(strayLifestyles)) {
     assert.deepEqual(importBackup(file), { income: 5000, commitments: [rent], lifestyle: [] });
   });
 }
+
+test("a version 2 backup, from before start and end months existed, still imports", () => {
+  const data = { income: 5000, commitments: [rent], lifestyle: [food] };
+  assert.deepEqual(importBackup(backupOf(data, 2)), data);
+});
+
+test("an expense that starts and ends in the same month is accepted", () => {
+  const state = stateWith({ commitments: [{ ...rent, startMonth: "2027-03", endMonth: "2027-03" }] });
+  assert.deepEqual(importBackup(backupOf(state)), state);
+});

@@ -1,15 +1,10 @@
-import {
-  lifestyleMonthlyCost,
-  monthlyCost,
-  remaining,
-  totalLifestyleCost,
-  totalMonthlyCost,
-} from "./calc.js";
+import { lifestyleMonthlyCost, monthlyCost, projection, tightestMonth } from "./calc.js";
 import { exportBackup, importBackup } from "./backup.js";
 import {
   MAX_AMOUNT,
   MAX_EVERY_MONTHS,
   MAX_NAME_LENGTH,
+  isMonth,
   isValidCommitment,
   isValidLifestyle,
 } from "./rules.js";
@@ -20,6 +15,20 @@ const money = new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR
 const range = (low, high) =>
   low === high ? money.format(low) : `${money.format(low)} – ${money.format(high)}`;
 
+const monthFormat = new Intl.DateTimeFormat("en-MY", { month: "short", year: "numeric" });
+const monthLabel = (month) => {
+  const [year, number] = month.split("-").map(Number);
+  return monthFormat.format(new Date(year, number - 1, 1));
+};
+const currentMonth = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+const periodLabel = ({ startMonth, endMonth }) =>
+  [startMonth && `from ${monthLabel(startMonth)}`, endMonth && `until ${monthLabel(endMonth)}`]
+    .filter(Boolean)
+    .join(" ");
+
 const $ = (id) => document.getElementById(id);
 const els = {
   notice: $("storage-notice"),
@@ -28,6 +37,8 @@ const els = {
   totalLifestyle: $("total-lifestyle"),
   remaining: $("remaining"),
   remainingHint: $("remaining-hint"),
+  tightest: $("tightest"),
+  projectionBody: $("projection-body"),
   exportButton: $("export-button"),
   importButton: $("import-button"),
   importFile: $("import-file"),
@@ -112,14 +123,20 @@ const SECTIONS = {
     noun: "commitment",
     amountFields: ["amount"],
     isValid: isValidCommitment,
-    detail: (item) => `${money.format(item.amount)} ${cadenceLabel(item.everyMonths)}`,
+    detail: (item) =>
+      [`${money.format(item.amount)} ${cadenceLabel(item.everyMonths)}`, periodLabel(item)]
+        .filter(Boolean)
+        .join(" · "),
     cost: (item) => `${money.format(monthlyCost(item))} / month`,
   },
   lifestyle: {
     noun: "lifestyle spending",
     amountFields: ["low", "high"],
     isValid: isValidLifestyle,
-    detail: (item) => `${range(item.low, item.high)} ${cadenceLabel(item.everyMonths)}`,
+    detail: (item) =>
+      [`${range(item.low, item.high)} ${cadenceLabel(item.everyMonths)}`, periodLabel(item)]
+        .filter(Boolean)
+        .join(" · "),
     cost: (item) => {
       const cost = lifestyleMonthlyCost(item);
       return `${range(cost.low, cost.high)} / month`;
@@ -131,6 +148,19 @@ const SECTIONS = {
     },
   },
 };
+
+function checkMonths(field) {
+  const start = field("startMonth");
+  const end = field("endMonth");
+  for (const input of [start, end]) {
+    input.setCustomValidity(
+      input.value && !isMonth(input.value) ? "Use the format YYYY-MM, for example 2027-03." : "",
+    );
+  }
+  if (isMonth(start.value) && isMonth(end.value) && end.value < start.value) {
+    end.setCustomValidity("The end month must be the same as or after the start month.");
+  }
+}
 
 function createSection(root, key, config) {
   const part = (role) => root.querySelector(`[data-role="${role}"]`);
@@ -178,6 +208,8 @@ function createSection(root, key, config) {
     editingId = id;
     field("name").value = item.name;
     for (const amountField of config.amountFields) field(amountField).value = item[amountField];
+    field("startMonth").value = item.startMonth ?? "";
+    field("endMonth").value = item.endMonth ?? "";
     if (item.everyMonths === 1 || item.everyMonths === 12) {
       field("cadence").value = String(item.everyMonths);
     } else {
@@ -249,16 +281,25 @@ function createSection(root, key, config) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     field("name").setCustomValidity(field("name").value.trim() ? "" : "Enter a name.");
+    checkMonths(field);
     config.checkForm?.(field);
     if (!form.reportValidity()) return;
 
+    const months = Object.fromEntries(
+      ["startMonth", "endMonth"].map((name) => [name, field(name).value]).filter(([, value]) => value),
+    );
     const item = {
       id: editingId ?? crypto.randomUUID(),
       name: field("name").value.trim(),
       ...Object.fromEntries(config.amountFields.map((name) => [name, Number(field(name).value)])),
       everyMonths: readEveryMonths(),
+      ...months,
     };
-    if (!config.isValid(item)) return;
+    if (!config.isValid(item)) {
+      field("name").setCustomValidity("Some of these values are not valid. Check them and try again.");
+      form.reportValidity();
+      return;
+    }
 
     state = {
       ...state,
@@ -280,18 +321,45 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
   createSection(document.querySelector(`[data-kind="${key}"]`), key, config),
 );
 
-function renderSummary() {
-  const { best, worst } = remaining(state);
-  const lifestyleCost = totalLifestyleCost(state.lifestyle);
-  els.totalCommitments.textContent = money.format(totalMonthlyCost(state.commitments));
-  els.totalLifestyle.textContent = range(lifestyleCost.low, lifestyleCost.high);
+let shownMonth = null;
+
+function renderOverview() {
+  shownMonth = currentMonth();
+  const months = projection(state, shownMonth);
+  const tightest = tightestMonth(months);
+  const { best, worst, commitments, lifestyle } = months[0];
+
+  els.totalCommitments.textContent = money.format(commitments);
+  els.totalLifestyle.textContent = range(lifestyle.low, lifestyle.high);
   els.remaining.textContent = range(worst, best);
   els.remainingHint.hidden = worst === best;
   els.remaining.classList.toggle("negative", worst < 0);
+  els.tightest.textContent = `Tightest month in the projection: ${monthLabel(tightest.month)}, worst case ${money.format(tightest.worst)}.`;
+
+  els.projectionBody.replaceChildren(
+    ...months.map((entry) => {
+      const row = document.createElement("tr");
+      const label = document.createElement("th");
+      label.scope = "row";
+      label.textContent = monthLabel(entry.month);
+      const value = document.createElement("td");
+      value.textContent = range(entry.worst, entry.best);
+      value.classList.toggle("negative", entry.worst < 0);
+      if (entry === tightest) {
+        row.className = "tightest";
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = "Tightest";
+        value.append(" ", badge);
+      }
+      row.append(label, value);
+      return row;
+    }),
+  );
 }
 
 function renderAll() {
-  renderSummary();
+  renderOverview();
   for (const section of sections) section.render();
 }
 
@@ -309,10 +377,14 @@ els.income.addEventListener("input", () => {
   const value = Number(els.income.value);
   state = { ...state, income: Number.isFinite(value) && value > 0 ? Math.min(value, MAX_AMOUNT) : 0 };
   saveState();
-  renderSummary();
+  renderOverview();
 });
 
 els.income.addEventListener("change", syncIncomeField);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && currentMonth() !== shownMonth) renderAll();
+});
 
 els.exportButton.addEventListener("click", () => {
   const blob = new Blob([exportBackup(state)], { type: "application/json" });

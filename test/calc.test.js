@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   lifestyleMonthlyCost,
   monthlyCost,
+  projection,
   remaining,
   totalLifestyleCost,
+  tightestMonth,
   totalMonthlyCost,
 } from "../calc.js";
 
@@ -109,4 +111,115 @@ test("a lifestyle range paid every few months is spread and rounded to the sen a
     low: 33.33,
     high: 66.67,
   });
+});
+
+const state = {
+  income: 5000,
+  commitments: [{ amount: 1500, everyMonths: 1 }],
+  lifestyle: [{ low: 400, high: 600, everyMonths: 1 }],
+};
+
+test("with no dates the projection is twelve identical months starting from the given month", () => {
+  const months = projection(state, "2026-10");
+  assert.equal(months.length, 12);
+  assert.equal(months[0].month, "2026-10");
+  assert.equal(months[11].month, "2027-09");
+  for (const { best, worst } of months) {
+    assert.deepEqual({ best, worst }, { best: 3100, worst: 2900 });
+  }
+});
+
+test("a commitment stops counting after its end month, inclusive", () => {
+  const months = projection(
+    { ...state, commitments: [{ amount: 1500, everyMonths: 1, endMonth: "2026-12" }] },
+    "2026-10",
+  );
+  assert.deepEqual(
+    months.slice(0, 5).map(({ month, worst }) => [month, worst]),
+    [
+      ["2026-10", 2900],
+      ["2026-11", 2900],
+      ["2026-12", 2900],
+      ["2027-01", 4400],
+      ["2027-02", 4400],
+    ],
+  );
+});
+
+test("an expense does not count before its start month", () => {
+  const months = projection(
+    {
+      ...state,
+      commitments: [{ amount: 1500, everyMonths: 1 }],
+      lifestyle: [{ low: 400, high: 600, everyMonths: 1, startMonth: "2026-12" }],
+    },
+    "2026-11",
+  );
+  assert.deepEqual(
+    months.slice(0, 3).map(({ month, best, worst }) => [month, best, worst]),
+    [
+      ["2026-11", 3500, 3500],
+      ["2026-12", 3100, 2900],
+      ["2027-01", 3100, 2900],
+    ],
+  );
+});
+
+const endingAt = (endMonth) => ({
+  ...state,
+  commitments: [{ amount: 1500, everyMonths: 1, endMonth }],
+});
+
+test("the projection stays twelve months when every end month falls within them", () => {
+  assert.equal(projection(endingAt("2027-03"), "2026-10").length, 12);
+});
+
+test("the projection runs through the latest end month when that is beyond twelve months", () => {
+  const months = projection(endingAt("2028-06"), "2026-10");
+  assert.equal(months.length, 21);
+  assert.equal(months.at(-1).month, "2028-06");
+});
+
+test("the projection never runs beyond twenty-four months", () => {
+  const months = projection(endingAt("2040-01"), "2026-10");
+  assert.equal(months.length, 24);
+  assert.equal(months.at(-1).month, "2028-09");
+});
+
+test("the tightest month is the one with the lowest worst case", () => {
+  const months = projection(
+    {
+      ...state,
+      commitments: [
+        { amount: 1500, everyMonths: 1, endMonth: "2026-11" },
+        { amount: 2500, everyMonths: 1, startMonth: "2027-01", endMonth: "2027-02" },
+      ],
+    },
+    "2026-10",
+  );
+  assert.equal(tightestMonth(months).month, "2027-01");
+});
+
+test("when several months are equally tight the earliest is chosen", () => {
+  assert.equal(tightestMonth(projection(state, "2026-10")).month, "2026-10");
+});
+
+test("each projected month carries that month's commitments and lifestyle totals", () => {
+  const months = projection(
+    {
+      ...state,
+      commitments: [
+        { amount: 1500, everyMonths: 1 },
+        { amount: 150, everyMonths: 1, endMonth: "2026-10" },
+      ],
+    },
+    "2026-10",
+  );
+  assert.deepEqual(months[0].commitments, 1650);
+  assert.deepEqual(months[1].commitments, 1500);
+  assert.deepEqual(months[0].lifestyle, { low: 400, high: 600 });
+});
+
+test("a projection starting after every end month is still twelve months", () => {
+  assert.equal(projection(endingAt("2026-09"), "2026-10").length, 12);
 });

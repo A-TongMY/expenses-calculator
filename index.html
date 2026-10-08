@@ -29,12 +29,17 @@
           <dd id="total-lifestyle">RM 0.00</dd>
         </div>
         <div class="remaining">
-          <dt>Remaining this month</dt>
+          <dt id="remaining-label">Remaining this month</dt>
           <dd id="remaining">RM 0.00</dd>
           <dd id="remaining-hint" class="hint" hidden>worst case to best case</dd>
         </div>
+        <div class="remaining" id="remaining-with-block" hidden>
+          <dt>Remaining this month, with scenarios</dt>
+          <dd id="remaining-with">RM 0.00</dd>
+        </div>
       </dl>
       <p id="tightest" class="tightest-note"></p>
+      <p id="tightest-with" class="tightest-note" hidden></p>
     </section>
 
     <section aria-labelledby="projection-heading">
@@ -43,7 +48,7 @@
       <div class="table-wrap">
         <table class="projection">
           <thead>
-            <tr><th scope="col">Month</th><th scope="col">Remaining (worst case to best case)</th></tr>
+            <tr><th scope="col">Month</th><th scope="col" id="projection-baseline-header">Remaining (worst case to best case)</th><th scope="col" id="projection-with-header" hidden>With scenarios</th></tr>
           </thead>
           <tbody id="projection-body"></tbody>
         </table>
@@ -52,7 +57,7 @@
 
     <section data-kind="commitments" aria-labelledby="commitments-heading">
       <h2 id="commitments-heading">Commitments</h2>
-      <p class="muted">Fixed obligations: rent, loans, insurance, subscriptions.</p>
+      <p class="muted">Fixed obligations: rent, loans, insurance, subscriptions. Tick "scenario" on one you are only considering, then switch it on and off to see what it would do to the figures above.</p>
       <ul class="items" data-role="list"></ul>
       <p class="muted" data-role="empty" hidden>No commitments yet. Add your first one below.</p>
 
@@ -88,6 +93,10 @@
             <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
           </label>
         </div>
+        <label class="check">
+          <input name="scenario" type="checkbox">
+          <span>This is only a scenario: something I am considering, not yet real</span>
+        </label>
         <div class="actions">
           <button type="submit" data-role="submit">Add commitment</button>
           <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>

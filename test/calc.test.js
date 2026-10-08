@@ -223,3 +223,60 @@ test("each projected month carries that month's commitments and lifestyle totals
 test("a projection starting after every end month is still twelve months", () => {
   assert.equal(projection(endingAt("2026-09"), "2026-10").length, 12);
 });
+
+const withScenario = (on) => ({
+  ...state,
+  commitments: [
+    { amount: 1500, everyMonths: 1 },
+    { amount: 700, everyMonths: 1, scenario: { on } },
+  ],
+});
+
+test("a switched-off scenario changes nothing", () => {
+  const [first] = projection(withScenario(false), "2026-10");
+  assert.deepEqual(first.withScenarios, { commitments: 1500, best: 3100, worst: 2900 });
+  assert.equal(first.commitments, 1500);
+});
+
+test("a switched-on scenario counts in the with-scenarios figures but not in the baseline", () => {
+  const [first] = projection(withScenario(true), "2026-10");
+  assert.deepEqual(
+    { commitments: first.commitments, best: first.best, worst: first.worst },
+    { commitments: 1500, best: 3100, worst: 2900 },
+  );
+  assert.deepEqual(first.withScenarios, { commitments: 2200, best: 2400, worst: 2200 });
+});
+
+test("with no scenarios the with-scenarios figures equal the baseline", () => {
+  const [first] = projection(state, "2026-10");
+  assert.deepEqual(first.withScenarios, { commitments: 1500, best: 3100, worst: 2900 });
+});
+
+const scenarioEndingAt = (on) => ({
+  ...state,
+  commitments: [{ amount: 700, everyMonths: 1, endMonth: "2028-06", scenario: { on } }],
+});
+
+test("a switched-on scenario can extend the projection past twelve months", () => {
+  assert.equal(projection(scenarioEndingAt(true), "2026-10").length, 21);
+});
+
+test("a switched-off scenario never extends the projection", () => {
+  assert.equal(projection(scenarioEndingAt(false), "2026-10").length, 12);
+});
+
+test("the tightest month can be read for the baseline or with scenarios", () => {
+  const months = projection(
+    {
+      ...state,
+      commitments: [
+        { amount: 1500, everyMonths: 1 },
+        { amount: 2500, everyMonths: 1, startMonth: "2027-03", endMonth: "2027-03", scenario: { on: true } },
+        { amount: 300, everyMonths: 1, startMonth: "2027-05", endMonth: "2027-05" },
+      ],
+    },
+    "2026-10",
+  );
+  assert.equal(tightestMonth(months).month, "2027-05");
+  assert.equal(tightestMonth(months, { withScenarios: true }).month, "2027-03");
+});

@@ -44,6 +44,10 @@ _Avoid_: Log, transaction, reconciliation
 A Commitment that is being considered but is not yet real.
 _Avoid_: What-if, draft, simulation, prospective commitment
 
+**Baseline**:
+Remaining counting only real Expenses, with every Scenario ignored.
+_Avoid_: Current, actual
+
 **Projection**:
 Remaining worked out for each of the coming months, honouring each Expense's Start month and End month.
 _Avoid_: Forecast, timeline

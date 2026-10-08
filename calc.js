@@ -51,9 +51,11 @@ const activeIn = (items, month) =>
       (!startMonth || startMonth <= month) && (!endMonth || month <= endMonth),
   );
 
-export function projection({ income, commitments, lifestyle }, fromMonth) {
+export function projection({ income, commitments: allCommitments, lifestyle }, fromMonth) {
+  const real = allCommitments.filter((commitment) => !commitment.scenario);
+  const counted = allCommitments.filter((commitment) => !commitment.scenario || commitment.scenario.on);
   const from = monthIndex(fromMonth);
-  const endIndexes = [...commitments, ...lifestyle]
+  const endIndexes = [...counted, ...lifestyle]
     .filter(({ endMonth }) => endMonth)
     .map(({ endMonth }) => monthIndex(endMonth));
   const latestEnd = Math.max(from, ...endIndexes);
@@ -63,16 +65,24 @@ export function projection({ income, commitments, lifestyle }, fromMonth) {
   );
   return Array.from({ length }, (_, offset) => {
     const month = monthAt(from + offset);
-    const activeCommitments = activeIn(commitments, month);
     const activeLifestyle = activeIn(lifestyle, month);
+    const figuresFor = (commitments) => {
+      const active = activeIn(commitments, month);
+      return {
+        commitments: totalMonthlyCost(active),
+        ...remaining({ income, commitments: active, lifestyle: activeLifestyle }),
+      };
+    };
     return {
       month,
-      commitments: totalMonthlyCost(activeCommitments),
       lifestyle: totalLifestyleCost(activeLifestyle),
-      ...remaining({ income, commitments: activeCommitments, lifestyle: activeLifestyle }),
+      ...figuresFor(real),
+      withScenarios: figuresFor(counted),
     };
   });
 }
 
-export const tightestMonth = (months) =>
-  months.reduce((tightest, month) => (month.worst < tightest.worst ? month : tightest));
+export function tightestMonth(months, { withScenarios = false } = {}) {
+  const worstOf = (month) => (withScenarios ? month.withScenarios.worst : month.worst);
+  return months.reduce((tightest, month) => (worstOf(month) < worstOf(tightest) ? month : tightest));
+}

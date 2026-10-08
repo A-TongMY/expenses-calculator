@@ -1,12 +1,17 @@
 import { isMoney, isValidCommitment, isValidLifestyle } from "./rules.js";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
-const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth"];
+const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth", "scenario"];
 const LIFESTYLE_FIELDS = ["id", "name", "low", "high", "everyMonths", "startMonth", "endMonth"];
 
 const pick = (item, fields) =>
   Object.fromEntries(fields.filter((field) => item[field] !== undefined).map((field) => [field, item[field]]));
+
+const toCommitment = (item) => {
+  const commitment = pick(item, COMMITMENT_FIELDS);
+  return commitment.scenario ? { ...commitment, scenario: { on: commitment.scenario.on } } : commitment;
+};
 
 const isValidList = (items, isValid) =>
   Array.isArray(items) &&
@@ -47,7 +52,7 @@ export function importBackup(file) {
   const lifestyle = version === 1 ? [] : parsed.data.lifestyle;
   return {
     income,
-    commitments: commitments.map((item) => pick(item, COMMITMENT_FIELDS)),
+    commitments: commitments.map(toCommitment),
     lifestyle: lifestyle.map((item) => pick(item, LIFESTYLE_FIELDS)),
   };
 }

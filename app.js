@@ -37,7 +37,14 @@ const els = {
   totalLifestyle: $("total-lifestyle"),
   remaining: $("remaining"),
   remainingHint: $("remaining-hint"),
+  figures: document.querySelector(".figures"),
+  remainingLabel: $("remaining-label"),
+  projectionBaselineHeader: $("projection-baseline-header"),
+  remainingWithBlock: $("remaining-with-block"),
+  remainingWith: $("remaining-with"),
   tightest: $("tightest"),
+  tightestWith: $("tightest-with"),
+  projectionWithHeader: $("projection-with-header"),
   projectionBody: $("projection-body"),
   exportButton: $("export-button"),
   importButton: $("import-button"),
@@ -121,6 +128,7 @@ function cadenceLabel(everyMonths) {
 const SECTIONS = {
   commitments: {
     noun: "commitment",
+    scenarios: true,
     amountFields: ["amount"],
     isValid: isValidCommitment,
     detail: (item) =>
@@ -210,6 +218,7 @@ function createSection(root, key, config) {
     for (const amountField of config.amountFields) field(amountField).value = item[amountField];
     field("startMonth").value = item.startMonth ?? "";
     field("endMonth").value = item.endMonth ?? "";
+    if (config.scenarios) field("scenario").checked = Boolean(item.scenario);
     if (item.everyMonths === 1 || item.everyMonths === 12) {
       field("cadence").value = String(item.everyMonths);
     } else {
@@ -232,8 +241,44 @@ function createSection(root, key, config) {
     renderAll();
   }
 
+  function replaceItem(id, change) {
+    state = { ...state, [key]: state[key].map((item) => (item.id === id ? change(item) : item)) };
+    saveState();
+    renderAll();
+  }
+
+  function scenarioControls(item) {
+    const toggle = document.createElement("label");
+    toggle.className = "switch";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = item.scenario.on;
+    box.setAttribute("role", "switch");
+    box.setAttribute("aria-label", `Include ${item.name} in the figures`);
+    box.addEventListener("change", () => {
+      replaceItem(item.id, (other) => ({ ...other, scenario: { on: box.checked } }));
+      const row = [...list.children].find((other) => other.dataset.id === item.id);
+      row?.querySelector("input[role=switch]")?.focus();
+    });
+    const text = document.createElement("span");
+    text.textContent = "Include";
+    toggle.append(box, text);
+
+    const makeReal = document.createElement("button");
+    makeReal.type = "button";
+    makeReal.className = "secondary";
+    makeReal.textContent = "Make real";
+    makeReal.setAttribute("aria-label", `Make ${item.name} a real commitment`);
+    makeReal.addEventListener("click", () => {
+      if (editingId === item.id) field("scenario").checked = false;
+      replaceItem(item.id, ({ scenario, ...real }) => real);
+    });
+    return [toggle, makeReal];
+  }
+
   function buildRow(item) {
     const row = document.createElement("li");
+    row.dataset.id = item.id;
 
     const text = document.createElement("div");
     const name = document.createElement("div");
@@ -243,6 +288,14 @@ function createSection(root, key, config) {
     detail.className = "item-detail";
     detail.textContent = config.detail(item);
     text.append(name, detail);
+    if (item.scenario) {
+      row.classList.add("scenario");
+      row.classList.toggle("off", !item.scenario.on);
+      const tag = document.createElement("span");
+      tag.className = "badge";
+      tag.textContent = "Scenario, not yet real";
+      name.append(" ", tag);
+    }
 
     const cost = document.createElement("div");
     cost.className = "item-cost";
@@ -262,7 +315,7 @@ function createSection(root, key, config) {
     del.textContent = "Delete";
     del.setAttribute("aria-label", `Delete ${item.name}`);
     del.addEventListener("click", () => remove(item.id));
-    actions.append(edit, del);
+    actions.append(...(item.scenario ? scenarioControls(item) : []), edit, del);
 
     row.append(text, cost, actions);
     return row;
@@ -295,6 +348,9 @@ function createSection(root, key, config) {
       everyMonths: readEveryMonths(),
       ...months,
     };
+    if (config.scenarios && field("scenario").checked) {
+      item.scenario = { on: find(editingId)?.scenario?.on ?? true };
+    }
     if (!config.isValid(item)) {
       field("name").setCustomValidity("Some of these values are not valid. Check them and try again.");
       form.reportValidity();
@@ -323,18 +379,57 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
 
 let shownMonth = null;
 
+function tightestLine(prefix, month, figures) {
+  return `${prefix}${monthLabel(month)}, worst case ${money.format(figures.worst)}.`;
+}
+
 function renderOverview() {
   shownMonth = currentMonth();
   const months = projection(state, shownMonth);
+  const showScenarios = state.commitments.some((commitment) => commitment.scenario?.on);
   const tightest = tightestMonth(months);
-  const { best, worst, commitments, lifestyle } = months[0];
+  const tightestWith = tightestMonth(months, { withScenarios: true });
+  const { best, worst, commitments, lifestyle, withScenarios } = months[0];
 
   els.totalCommitments.textContent = money.format(commitments);
   els.totalLifestyle.textContent = range(lifestyle.low, lifestyle.high);
   els.remaining.textContent = range(worst, best);
   els.remainingHint.hidden = worst === best;
   els.remaining.classList.toggle("negative", worst < 0);
-  els.tightest.textContent = `Tightest month in the projection: ${monthLabel(tightest.month)}, worst case ${money.format(tightest.worst)}.`;
+  els.remainingLabel.textContent = showScenarios ? "Remaining this month, baseline" : "Remaining this month";
+  els.projectionBaselineHeader.textContent = showScenarios
+    ? "Baseline (worst case to best case)"
+    : "Remaining (worst case to best case)";
+  els.tightest.textContent = tightestLine(
+    showScenarios ? "Baseline tightest month: " : "Tightest month in the projection: ",
+    tightest.month,
+    tightest,
+  );
+
+  els.remainingWithBlock.hidden = !showScenarios;
+  els.figures.classList.toggle("has-scenarios", showScenarios);
+  els.remainingWith.textContent = range(withScenarios.worst, withScenarios.best);
+  els.remainingWith.classList.toggle("negative", withScenarios.worst < 0);
+  els.tightestWith.hidden = !showScenarios;
+  els.tightestWith.textContent = tightestLine(
+    "Tightest month with scenarios: ",
+    tightestWith.month,
+    tightestWith.withScenarios,
+  );
+  els.projectionWithHeader.hidden = !showScenarios;
+
+  const cell = (figures, isTightest) => {
+    const value = document.createElement("td");
+    value.textContent = range(figures.worst, figures.best);
+    value.classList.toggle("negative", figures.worst < 0);
+    if (isTightest) {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = "Tightest";
+      value.append(" ", badge);
+    }
+    return value;
+  };
 
   els.projectionBody.replaceChildren(
     ...months.map((entry) => {
@@ -342,17 +437,8 @@ function renderOverview() {
       const label = document.createElement("th");
       label.scope = "row";
       label.textContent = monthLabel(entry.month);
-      const value = document.createElement("td");
-      value.textContent = range(entry.worst, entry.best);
-      value.classList.toggle("negative", entry.worst < 0);
-      if (entry === tightest) {
-        row.className = "tightest";
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = "Tightest";
-        value.append(" ", badge);
-      }
-      row.append(label, value);
+      row.append(label, cell(entry, entry === tightest));
+      if (showScenarios) row.append(cell(entry.withScenarios, entry === tightestWith));
       return row;
     }),
   );

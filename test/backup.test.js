@@ -7,6 +7,8 @@ const sampleState = {
   commitments: [
     { id: "c1", name: "Rent", amount: 1500, everyMonths: 1 },
     { id: "c2", name: "Car insurance", amount: 1200, everyMonths: 12, endMonth: "2028-06" },
+    { id: "c3", name: "New car", amount: 900, everyMonths: 1, scenario: { on: true } },
+    { id: "c4", name: "Bigger flat", amount: 2200, everyMonths: 1, startMonth: "2027-06", scenario: { on: false } },
   ],
   lifestyle: [
     { id: "l1", name: "Food", low: 400, high: 600, everyMonths: 1 },
@@ -24,7 +26,7 @@ const stateWith = (overrides) => ({
   ...overrides,
 });
 
-const backupOf = (data, schemaVersion = 3) => JSON.stringify({ schemaVersion, data });
+const backupOf = (data, schemaVersion = 4) => JSON.stringify({ schemaVersion, data });
 
 test("a backup can be imported back into exactly the state that was exported", () => {
   const file = exportBackup(sampleState);
@@ -32,7 +34,7 @@ test("a backup can be imported back into exactly the state that was exported", (
 });
 
 test("exporting writes the current schema version", () => {
-  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 3);
+  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 4);
 });
 
 test("a version 1 backup, from before lifestyle spending existed, still imports", () => {
@@ -50,14 +52,14 @@ test("importing something that is not JSON is rejected with a clear message", ()
 });
 
 test("a backup from a newer version of the app is refused", () => {
-  assert.throws(() => importBackup(backupOf(sampleState, 4)), {
+  assert.throws(() => importBackup(backupOf(sampleState, 5)), {
     message: "This backup was made by a newer version of the app and cannot be imported.",
   });
 });
 
 const notBackups = {
   "an empty object": "{}",
-  "no data": JSON.stringify({ schemaVersion: 3 }),
+  "no data": JSON.stringify({ schemaVersion: 4 }),
   "no schemaVersion": JSON.stringify({ data: sampleState }),
   "a schemaVersion that is not a number": backupOf(sampleState, "abc"),
   "a schemaVersion of zero": backupOf(sampleState, 0),
@@ -85,6 +87,10 @@ const notBackups = {
   "a commitment ending before it starts": backupOf(stateWith({ commitments: [{ ...rent, startMonth: "2027-03", endMonth: "2027-02" }] })),
   "a lifestyle start month that is not a real month": backupOf(stateWith({ lifestyle: [{ ...food, startMonth: "2026-00" }] })),
   "a lifestyle item ending before it starts": backupOf(stateWith({ lifestyle: [{ ...food, startMonth: "2027-03", endMonth: "2027-02" }] })),
+  "a scenario flag that is just true": backupOf(stateWith({ commitments: [{ ...rent, scenario: true }] })),
+  "a scenario whose on is not a boolean": backupOf(stateWith({ commitments: [{ ...rent, scenario: { on: "yes" } }] })),
+  "a scenario with no on": backupOf(stateWith({ commitments: [{ ...rent, scenario: {} }] })),
+  "a scenario that is null": backupOf(stateWith({ commitments: [{ ...rent, scenario: null }] })),
   "a lifestyle cadence of zero months": backupOf(stateWith({ lifestyle: [{ ...food, everyMonths: 0 }] })),
 };
 
@@ -135,4 +141,24 @@ test("a version 2 backup, from before start and end months existed, still import
 test("an expense that starts and ends in the same month is accepted", () => {
   const state = stateWith({ commitments: [{ ...rent, startMonth: "2027-03", endMonth: "2027-03" }] });
   assert.deepEqual(importBackup(backupOf(state)), state);
+});
+
+test("a version 3 backup, from before scenarios existed, still imports", () => {
+  const data = { income: 5000, commitments: [rent], lifestyle: [food] };
+  assert.deepEqual(importBackup(backupOf(data, 3)), data);
+});
+
+test("unknown fields inside a scenario are dropped", () => {
+  const file = backupOf(
+    stateWith({ commitments: [{ ...rent, scenario: { on: false, note: "keep out" } }] }),
+  );
+  assert.deepEqual(
+    importBackup(file),
+    stateWith({ commitments: [{ ...rent, scenario: { on: false } }] }),
+  );
+});
+
+test("a scenario flag on a lifestyle item is dropped, because only commitments can be scenarios", () => {
+  const file = backupOf(stateWith({ lifestyle: [{ ...food, scenario: { on: true } }] }));
+  assert.deepEqual(importBackup(file), stateWith({}));
 });

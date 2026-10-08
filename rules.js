@@ -18,12 +18,16 @@ const isPeriod = ({ startMonth, endMonth }) =>
   (endMonth === undefined || isMonth(endMonth)) &&
   (startMonth === undefined || endMonth === undefined || startMonth <= endMonth);
 
+const isScenario = (scenario) =>
+  scenario === undefined || typeof scenario?.on === "boolean";
+
 export const isValidCommitment = (commitment) =>
   typeof commitment?.id === "string" &&
   isName(commitment.name) &&
   isMoney(commitment.amount) &&
   isCadence(commitment.everyMonths) &&
-  isPeriod(commitment);
+  isPeriod(commitment) &&
+  isScenario(commitment.scenario);
 
 export const isValidLifestyle = (item) =>
   typeof item?.id === "string" &&

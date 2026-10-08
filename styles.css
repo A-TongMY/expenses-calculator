@@ -145,3 +145,16 @@ button.danger { color: var(--negative); border-color: var(--negative); backgroun
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+.check { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0 0 0.75rem; font-size: 0.95rem; }
+.check input { width: auto; margin-top: 0.3rem; }
+
+.items li.scenario { border-style: dashed; }
+.items li.scenario.off { opacity: 0.6; }
+
+.switch { display: inline-flex; gap: 0.4rem; align-items: center; padding: 0.55rem 0.5rem; cursor: pointer; }
+.switch input { width: auto; margin: 0; }
+
+.figures.has-scenarios .remaining { grid-column: auto; }
+.figures.has-scenarios .remaining dd { font-size: 1.3rem; }
+.figures.has-scenarios .remaining dd.hint { font-size: 0.85rem; font-weight: 400; }

@@ -1,49 +1,38 @@
 import { lifestyleMonthlyCost, monthlyCost, projection, tightestMonth } from "./calc.js";
-import { exportBackup, importBackup } from "./backup.js";
+import { importBackup, exportBackup } from "./backup.js";
+import { setupCheckIns } from "./checkins.js";
+import { cadenceLabel, currentMonth, money, monthLabel, periodLabel, range } from "./format.js";
 import {
   MAX_AMOUNT,
   MAX_EVERY_MONTHS,
+  MAX_ITEMS,
   MAX_NAME_LENGTH,
   isMonth,
   isValidCommitment,
   isValidLifestyle,
 } from "./rules.js";
+import { STORAGE_KEY, loadState, saveState } from "./storage.js";
 
-const STORAGE_KEY = "expenses-calculator";
-
-const money = new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR" });
-const range = (low, high) =>
-  low === high ? money.format(low) : `${money.format(low)} – ${money.format(high)}`;
-
-const monthFormat = new Intl.DateTimeFormat("en-MY", { month: "short", year: "numeric" });
-const monthLabel = (month) => {
-  const [year, number] = month.split("-").map(Number);
-  return monthFormat.format(new Date(year, number - 1, 1));
-};
-const currentMonth = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-};
-const periodLabel = ({ startMonth, endMonth }) =>
-  [startMonth && `from ${monthLabel(startMonth)}`, endMonth && `until ${monthLabel(endMonth)}`]
-    .filter(Boolean)
-    .join(" ");
+const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
 const $ = (id) => document.getElementById(id);
 const els = {
   notice: $("storage-notice"),
   income: $("income"),
+  figures: document.querySelector(".figures"),
+  commitmentsLabel: $("commitments-label"),
   totalCommitments: $("total-commitments"),
   totalLifestyle: $("total-lifestyle"),
+  remainingLabel: $("remaining-label"),
   remaining: $("remaining"),
   remainingHint: $("remaining-hint"),
-  figures: document.querySelector(".figures"),
-  remainingLabel: $("remaining-label"),
-  projectionBaselineHeader: $("projection-baseline-header"),
   remainingWithBlock: $("remaining-with-block"),
   remainingWith: $("remaining-with"),
   tightest: $("tightest"),
   tightestWith: $("tightest-with"),
+  projectionEmpty: $("projection-empty"),
+  projectionWrap: $("projection-wrap"),
+  projectionBaselineHeader: $("projection-baseline-header"),
   projectionWithHeader: $("projection-with-header"),
   projectionBody: $("projection-body"),
   exportButton: $("export-button"),
@@ -56,73 +45,38 @@ for (const el of document.querySelectorAll('[data-limit="amount"]')) el.max = MA
 for (const el of document.querySelectorAll('[data-limit="months"]')) el.max = MAX_EVERY_MONTHS;
 for (const el of document.querySelectorAll('[data-limit="name"]')) el.maxLength = MAX_NAME_LENGTH;
 
-let state = loadState();
-let saveFailed = false;
-
-function blankState() {
-  return { income: 0, commitments: [], lifestyle: [] };
-}
+// crypto.randomUUID only exists on secure origins, not on a LAN address like http://192.168.1.5.
+const newId = () =>
+  crypto.randomUUID?.() ??
+  [...crypto.getRandomValues(new Uint8Array(16))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 function showNotice(message) {
   els.notice.textContent = message;
   els.notice.hidden = false;
 }
 
-function hideNotice() {
-  els.notice.hidden = true;
+const loaded = loadState();
+let state = loaded.state;
+if (loaded.notice) showNotice(loaded.notice);
+const startupNotice = loaded.notice ?? null;
+
+let saveFailed = false;
+
+function persist() {
+  const saved = saveState(state);
+  if (saved && saveFailed) {
+    if (startupNotice) showNotice(startupNotice);
+    else els.notice.hidden = true;
+  }
+  if (!saved) showNotice("Could not save to this browser. Use Export backup to keep your data.");
+  saveFailed = !saved;
+  return saved;
 }
 
-function keepUnreadableCopy(saved) {
-  const key = `${STORAGE_KEY}:unreadable:${new Date().toISOString()}`;
-  try {
-    localStorage.setItem(key, saved);
-    return key;
-  } catch {
-    return null;
-  }
-}
-
-function loadState() {
-  let saved;
-  try {
-    saved = localStorage.getItem(STORAGE_KEY);
-  } catch {
-    showNotice("This browser is blocking storage, so changes will not be saved. Use Export backup to keep your data.");
-    return blankState();
-  }
-  if (!saved) return blankState();
-  try {
-    return importBackup(saved);
-  } catch {
-    const key = keepUnreadableCopy(saved);
-    showNotice(
-      key
-        ? `Your saved data could not be read, so the app started empty. The original was kept untouched in this browser (storage key "${key}").`
-        : "Your saved data could not be read, so the app started empty, and a copy could not be kept. Do not make changes if you want to recover it.",
-    );
-    return blankState();
-  }
-}
-
-function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, exportBackup(state));
-    if (saveFailed) {
-      saveFailed = false;
-      hideNotice();
-    }
-    return true;
-  } catch {
-    saveFailed = true;
-    showNotice("Could not save to this browser. Use Export backup to keep your data.");
-    return false;
-  }
-}
-
-function cadenceLabel(everyMonths) {
-  if (everyMonths === 1) return "every month";
-  if (everyMonths === 12) return "every year";
-  return `every ${everyMonths} months`;
+function commit(next) {
+  state = next;
+  persist();
+  renderAll();
 }
 
 const SECTIONS = {
@@ -235,16 +189,12 @@ function createSection(root, key, config) {
   function remove(id) {
     const item = find(id);
     if (!item || !confirm(`Delete "${item.name}"?`)) return;
-    state = { ...state, [key]: state[key].filter((other) => other.id !== id) };
     if (editingId === id) reset();
-    saveState();
-    renderAll();
+    commit({ ...state, [key]: state[key].filter((other) => other.id !== id) });
   }
 
   function replaceItem(id, change) {
-    state = { ...state, [key]: state[key].map((item) => (item.id === id ? change(item) : item)) };
-    saveState();
-    renderAll();
+    commit({ ...state, [key]: state[key].map((item) => (item.id === id ? change(item) : item)) });
   }
 
   function scenarioControls(item) {
@@ -257,6 +207,7 @@ function createSection(root, key, config) {
     box.setAttribute("aria-label", `Include ${item.name} in the figures`);
     box.addEventListener("change", () => {
       replaceItem(item.id, (other) => ({ ...other, scenario: { on: box.checked } }));
+      // The list was just rebuilt, so the focused switch is gone: give focus back to its replacement.
       const row = [...list.children].find((other) => other.dataset.id === item.id);
       row?.querySelector("input[role=switch]")?.focus();
     });
@@ -322,6 +273,7 @@ function createSection(root, key, config) {
   }
 
   function render() {
+    if (editingId && !find(editingId)) reset();
     list.replaceChildren(...state[key].map(buildRow));
     emptyMessage.hidden = state[key].length > 0;
   }
@@ -342,7 +294,7 @@ function createSection(root, key, config) {
       ["startMonth", "endMonth"].map((name) => [name, field(name).value]).filter(([, value]) => value),
     );
     const item = {
-      id: editingId ?? crypto.randomUUID(),
+      id: editingId ?? newId(),
       name: field("name").value.trim(),
       ...Object.fromEntries(config.amountFields.map((name) => [name, Number(field(name).value)])),
       everyMonths: readEveryMonths(),
@@ -357,15 +309,19 @@ function createSection(root, key, config) {
       return;
     }
 
-    state = {
+    const next = {
       ...state,
       [key]: editingId
         ? state[key].map((other) => (other.id === editingId ? item : other))
         : [...state[key], item],
     };
-    saveState();
+    if (next[key].length > MAX_ITEMS) {
+      field("name").setCustomValidity(`That would go over the limit of ${MAX_ITEMS} items.`);
+      form.reportValidity();
+      return;
+    }
     reset();
-    renderAll();
+    commit(next);
     field("name").focus();
   });
 
@@ -377,76 +333,86 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
   createSection(document.querySelector(`[data-kind="${key}"]`), key, config),
 );
 
+const checkIns = setupCheckIns({ getState: () => state, commit });
+
 let shownMonth = null;
 
 function tightestLine(prefix, month, figures) {
   return `${prefix}${monthLabel(month)}, worst case ${money.format(figures.worst)}.`;
 }
 
+function tableCell(figures, isTightest) {
+  const cell = document.createElement("td");
+  cell.textContent = range(figures.worst, figures.best);
+  cell.classList.toggle("negative", figures.worst < 0);
+  if (isTightest) {
+    cell.classList.add("tightest");
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "Tightest";
+    cell.append(" ", badge);
+  }
+  return cell;
+}
+
 function renderOverview() {
-  shownMonth = currentMonth();
-  const months = projection(state, shownMonth);
+  const months = projection(state, currentMonth());
+  const hasData = state.income > 0 || state.commitments.length > 0 || state.lifestyle.length > 0;
   const showScenarios = state.commitments.some((commitment) => commitment.scenario?.on);
   const tightest = tightestMonth(months);
   const tightestWith = tightestMonth(months, { withScenarios: true });
   const { best, worst, commitments, lifestyle, withScenarios } = months[0];
 
+  els.commitmentsLabel.textContent = showScenarios ? "Commitments this month, baseline" : "Commitments this month";
   els.totalCommitments.textContent = money.format(commitments);
   els.totalLifestyle.textContent = range(lifestyle.low, lifestyle.high);
+  els.remainingLabel.textContent = showScenarios ? "Remaining this month, baseline" : "Remaining this month";
   els.remaining.textContent = range(worst, best);
   els.remainingHint.hidden = worst === best;
   els.remaining.classList.toggle("negative", worst < 0);
-  els.remainingLabel.textContent = showScenarios ? "Remaining this month, baseline" : "Remaining this month";
-  els.projectionBaselineHeader.textContent = showScenarios
-    ? "Baseline (worst case to best case)"
-    : "Remaining (worst case to best case)";
+
+  els.figures.classList.toggle("has-scenarios", showScenarios);
+  els.remainingWithBlock.hidden = !showScenarios;
+  els.remainingWith.textContent = range(withScenarios.worst, withScenarios.best);
+  els.remainingWith.classList.toggle("negative", withScenarios.worst < 0);
+
+  els.tightest.hidden = !hasData;
   els.tightest.textContent = tightestLine(
     showScenarios ? "Baseline tightest month: " : "Tightest month in the projection: ",
     tightest.month,
     tightest,
   );
-
-  els.remainingWithBlock.hidden = !showScenarios;
-  els.figures.classList.toggle("has-scenarios", showScenarios);
-  els.remainingWith.textContent = range(withScenarios.worst, withScenarios.best);
-  els.remainingWith.classList.toggle("negative", withScenarios.worst < 0);
-  els.tightestWith.hidden = !showScenarios;
+  els.tightestWith.hidden = !hasData || !showScenarios;
   els.tightestWith.textContent = tightestLine(
     "Tightest month with scenarios: ",
     tightestWith.month,
     tightestWith.withScenarios,
   );
+
+  els.projectionEmpty.hidden = hasData;
+  els.projectionWrap.hidden = !hasData;
+  els.projectionBaselineHeader.textContent = showScenarios
+    ? "Baseline (worst case to best case)"
+    : "Remaining (worst case to best case)";
   els.projectionWithHeader.hidden = !showScenarios;
-
-  const cell = (figures, isTightest) => {
-    const value = document.createElement("td");
-    value.textContent = range(figures.worst, figures.best);
-    value.classList.toggle("negative", figures.worst < 0);
-    if (isTightest) {
-      const badge = document.createElement("span");
-      badge.className = "badge";
-      badge.textContent = "Tightest";
-      value.append(" ", badge);
-    }
-    return value;
-  };
-
   els.projectionBody.replaceChildren(
     ...months.map((entry) => {
       const row = document.createElement("tr");
       const label = document.createElement("th");
       label.scope = "row";
       label.textContent = monthLabel(entry.month);
-      row.append(label, cell(entry, entry === tightest));
-      if (showScenarios) row.append(cell(entry.withScenarios, entry === tightestWith));
+      row.append(label, tableCell(entry, entry === tightest));
+      if (showScenarios) row.append(tableCell(entry.withScenarios, entry === tightestWith));
       return row;
     }),
   );
 }
 
 function renderAll() {
+  shownMonth = currentMonth();
   renderOverview();
   for (const section of sections) section.render();
+  checkIns.render();
 }
 
 function syncIncomeField() {
@@ -461,15 +427,34 @@ syncIncomeField();
 
 els.income.addEventListener("input", () => {
   const value = Number(els.income.value);
+  // Silently capped at the largest amount a backup can hold.
   state = { ...state, income: Number.isFinite(value) && value > 0 ? Math.min(value, MAX_AMOUNT) : 0 };
-  saveState();
+  persist();
   renderOverview();
 });
 
 els.income.addEventListener("change", syncIncomeField);
 
-document.addEventListener("visibilitychange", () => {
+function refreshIfMonthChanged() {
   if (!document.hidden && currentMonth() !== shownMonth) renderAll();
+}
+
+document.addEventListener("visibilitychange", refreshIfMonthChanged);
+// A tab left open and visible across midnight on the 1st never fires visibilitychange.
+setInterval(refreshIfMonthChanged, 60_000);
+
+// Another tab saved: take its data instead of overwriting it with this tab's older copy.
+window.addEventListener("storage", (event) => {
+  if (event.key !== STORAGE_KEY || event.newValue === null) return;
+  let incoming;
+  try {
+    incoming = importBackup(event.newValue);
+  } catch {
+    return; // An unreadable value is left for the tab that wrote it to report.
+  }
+  state = incoming;
+  syncIncomeField();
+  renderAll();
 });
 
 els.exportButton.addEventListener("click", () => {
@@ -477,9 +462,9 @@ els.exportButton.addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `expenses-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `expenses-backup-${currentMonth()}-${String(new Date().getDate()).padStart(2, "0")}.json`;
   link.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
   showBackupMessage("Backup downloaded. Keep it private: it contains your finances.");
 });
 
@@ -489,6 +474,10 @@ els.importFile.addEventListener("change", async () => {
   const [file] = els.importFile.files;
   els.importFile.value = "";
   if (!file) return;
+  if (file.size > MAX_BACKUP_BYTES) {
+    showBackupMessage("That file is too large to be a backup from this app.");
+    return;
+  }
   try {
     const imported = importBackup(await file.text());
     if (!confirm("Importing replaces everything currently saved in this browser. Continue?")) {
@@ -496,10 +485,11 @@ els.importFile.addEventListener("change", async () => {
       return;
     }
     state = imported;
-    const saved = saveState();
+    const saved = persist();
     syncIncomeField();
     for (const section of sections) section.reset();
     renderAll();
+    checkIns.syncForm();
     showBackupMessage(
       saved
         ? "Backup imported."

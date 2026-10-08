@@ -1,9 +1,18 @@
-import { isMoney, isValidCommitment, isValidLifestyle } from "./rules.js";
+import {
+  MAX_ITEMS,
+  isMoney,
+  isValidCheckIn,
+  isValidCommitment,
+  isValidLifestyle,
+} from "./rules.js";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
+const LIFESTYLE_SINCE = 2;
+const CHECK_INS_SINCE = 5;
 
 const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth", "scenario"];
 const LIFESTYLE_FIELDS = ["id", "name", "low", "high", "everyMonths", "startMonth", "endMonth"];
+const CHECK_IN_FIELDS = ["month", "itemId", "name", "low", "high", "actual"];
 
 const pick = (item, fields) =>
   Object.fromEntries(fields.filter((field) => item[field] !== undefined).map((field) => [field, item[field]]));
@@ -13,18 +22,26 @@ const toCommitment = (item) => {
   return commitment.scenario ? { ...commitment, scenario: { on: commitment.scenario.on } } : commitment;
 };
 
-const isValidList = (items, isValid) =>
+const isValidList = (items, isValid, keyOf = (item) => item.id) =>
   Array.isArray(items) &&
+  items.length <= MAX_ITEMS &&
   items.every(isValid) &&
-  new Set(items.map((item) => item.id)).size === items.length;
+  new Set(items.map(keyOf)).size === items.length;
 
-function isState(data, version) {
-  return (
-    isMoney(data?.income) &&
-    isValidList(data?.commitments, isValidCommitment) &&
-    (version === 1 || isValidList(data?.lifestyle, isValidLifestyle))
-  );
-}
+const checkInKey = ({ month, itemId }) => `${month}|${itemId}`;
+
+// Older backups predate some lists: those start empty, and a stray value for them is ignored.
+const upgrade = (data, version) => ({
+  ...data,
+  lifestyle: version < LIFESTYLE_SINCE ? [] : data?.lifestyle,
+  checkIns: version < CHECK_INS_SINCE ? [] : data?.checkIns,
+});
+
+const isState = (data) =>
+  isMoney(data.income) &&
+  isValidList(data.commitments, isValidCommitment) &&
+  isValidList(data.lifestyle, isValidLifestyle) &&
+  isValidList(data.checkIns, isValidCheckIn, checkInKey);
 
 export function exportBackup(state) {
   return JSON.stringify({ schemaVersion: SCHEMA_VERSION, data: state }, null, 2);
@@ -43,16 +60,16 @@ export function importBackup(file) {
       "This backup was made by a newer version of the app and cannot be imported.",
     );
   }
-  if (!Number.isInteger(version) || version < 1 || !isState(parsed?.data, version)) {
+  const data = upgrade(parsed?.data, version);
+  if (!Number.isInteger(version) || version < 1 || !isState(data)) {
     throw new Error(
       "This file is not a valid backup: the data is not in the expected shape.",
     );
   }
-  const { income, commitments } = parsed.data;
-  const lifestyle = version === 1 ? [] : parsed.data.lifestyle;
   return {
-    income,
-    commitments: commitments.map(toCommitment),
-    lifestyle: lifestyle.map((item) => pick(item, LIFESTYLE_FIELDS)),
+    income: data.income,
+    commitments: data.commitments.map(toCommitment),
+    lifestyle: data.lifestyle.map((item) => pick(item, LIFESTYLE_FIELDS)),
+    checkIns: data.checkIns.map((item) => pick(item, CHECK_IN_FIELDS)),
   };
 }

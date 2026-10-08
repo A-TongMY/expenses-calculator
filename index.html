@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; object-src 'none'">
   <title>Expenses Calculator</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
@@ -21,7 +22,7 @@
       </label>
       <dl class="figures">
         <div>
-          <dt>Commitments this month</dt>
+          <dt id="commitments-label">Commitments this month</dt>
           <dd id="total-commitments">RM 0.00</dd>
         </div>
         <div>
@@ -45,8 +46,9 @@
     <section aria-labelledby="projection-heading">
       <h2 id="projection-heading">Projection</h2>
       <p class="muted">What remains each month, honouring start and end months. Costs paid every few months are spread evenly.</p>
-      <div class="table-wrap">
-        <table class="projection">
+      <p class="muted" id="projection-empty" hidden>Enter your monthly income and add a commitment to see your projection.</p>
+      <div class="table-wrap" id="projection-wrap">
+        <table class="data-table">
           <thead>
             <tr><th scope="col">Month</th><th scope="col" id="projection-baseline-header">Remaining (worst case to best case)</th><th scope="col" id="projection-with-header" hidden>With scenarios</th></tr>
           </thead>
@@ -57,7 +59,7 @@
 
     <section data-kind="commitments" aria-labelledby="commitments-heading">
       <h2 id="commitments-heading">Commitments</h2>
-      <p class="muted">Fixed obligations: rent, loans, insurance, subscriptions. Tick "scenario" on one you are only considering, then switch it on and off to see what it would do to the figures above.</p>
+      <p class="muted">Fixed payments: rent, loans, insurance, subscriptions. Tick "scenario" on one you are only considering, then switch it on and off to see what it would do to the figures above.</p>
       <ul class="items" data-role="list"></ul>
       <p class="muted" data-role="empty" hidden>No commitments yet. Add your first one below.</p>
 
@@ -153,6 +155,44 @@
           <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
         </div>
       </form>
+    </section>
+
+    <section aria-labelledby="checkins-heading">
+      <h2 id="checkins-heading">Check-ins</h2>
+      <p class="muted">At the end of a month, enter what you actually spent on each lifestyle item. Each check-in keeps the estimate it was compared against, so changing an estimate later never rewrites past months.</p>
+      <p class="muted" id="checkin-no-lifestyle" hidden>Add some lifestyle spending first, then you can check in on it.</p>
+
+      <form class="card" id="checkin-form" autocomplete="off">
+        <h3>Check in</h3>
+        <div class="pair">
+          <label class="field">
+            <span>Month</span>
+            <input name="month" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Item</span>
+            <select name="item" required></select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Actually spent (MYR)</span>
+          <input name="actual" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off">
+        </label>
+        <p class="muted" id="checkin-hint"></p>
+        <div class="actions">
+          <button type="submit" id="checkin-submit">Save check-in</button>
+        </div>
+      </form>
+
+      <p class="muted" id="checkin-empty">No check-ins yet.</p>
+      <div class="table-wrap">
+        <table class="data-table" id="checkin-table" hidden>
+          <thead>
+            <tr><th scope="col">Month</th><th scope="col">Item</th><th scope="col">Estimate (per month)</th><th scope="col">Actually spent</th><th scope="col">Gap</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+          </thead>
+          <tbody id="checkin-body"></tbody>
+        </table>
+      </div>
     </section>
 
     <section aria-labelledby="backup-heading">

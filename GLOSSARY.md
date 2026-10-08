@@ -1,6 +1,6 @@
 # Expenses Calculator
 
-A personal tool that shows how much of a monthly income is left after expenses, and whether a prospective new commitment can be absorbed while keeping the current lifestyle.
+A personal tool that shows how much of a monthly income is left after expenses, and whether a Scenario can be absorbed while keeping the current lifestyle.
 
 ## Language
 
@@ -9,11 +9,11 @@ The single fixed monthly amount of money coming in.
 _Avoid_: Salary, budget, earnings
 
 **Expense**:
-Any money going out each month. The umbrella term for every kind of outgoing.
+Any money going out: the umbrella term for every kind of outgoing.
 _Avoid_: Cost, spending (as the umbrella)
 
 **Commitment**:
-A fixed-amount obligation, either recurring indefinitely or ending on a date.
+A fixed-amount Expense the user has agreed to pay, paid on a Cadence and optionally limited by a Start month and End month.
 _Avoid_: Bill, fixed expense, obligation
 
 **Lifestyle spending**:
@@ -33,12 +33,24 @@ The last month an Expense counts toward Remaining, inclusive. An Expense without
 _Avoid_: End date, expiry
 
 **Monthly cost**:
-An Expense's amount divided evenly over its Cadence: what it costs in a single month (150 MYR every 3 months is 50 a month).
+What an Expense costs in a single month, with its amount spread evenly over its Cadence.
 _Avoid_: Amortized amount, average
 
+**Estimate**:
+The low and the high amount entered for a Lifestyle spending item.
+_Avoid_: Budget, guess
+
 **Check-in**:
-An optional month-end entry of what was actually spent per Lifestyle spending item, used to compare against its estimate.
+An optional month-end entry of what was actually spent on one Lifestyle spending item, kept together with the Monthly cost range it was compared against.
 _Avoid_: Log, transaction, reconciliation
+
+**Gap**:
+How a Check-in's actual spending compares with its Monthly cost range: under it, within it, or over it, and by how much.
+_Avoid_: Variance, difference, overspend
+
+**Real**:
+An Expense that is not a Scenario, so it always counts toward Remaining.
+_Avoid_: Actual, confirmed
 
 **Scenario**:
 A Commitment that is being considered but is not yet real.
@@ -56,6 +68,14 @@ _Avoid_: Forecast, timeline
 The month in the Projection with the lowest worst case.
 _Avoid_: Worst month, low point
 
+**Best case**:
+Remaining when every Lifestyle spending item costs its low estimate.
+_Avoid_: Optimistic, maximum
+
+**Worst case**:
+Remaining when every Lifestyle spending item costs its high estimate.
+_Avoid_: Pessimistic, minimum
+
 **Remaining**:
-What is left of the Income after all Expenses, as a span from the best case (every Lifestyle spending item at its low estimate) to the worst case (every item at its high estimate).
+What is left of the Income after all Expenses, as a span from its Worst case to its Best case.
 _Avoid_: Balance, surplus, savings

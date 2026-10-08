@@ -128,12 +128,12 @@ button.danger { color: var(--negative); border-color: var(--negative); backgroun
 
 .table-wrap { overflow-x: auto; }
 
-.projection { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.projection th, .projection td { padding: 0.45rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
-.projection thead th { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
-.projection tbody th { font-weight: 400; white-space: nowrap; }
-.projection td.negative { color: var(--negative); }
-.projection tr.tightest th, .projection tr.tightest td { font-weight: 600; }
+.data-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td { padding: 0.45rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
+.data-table thead th { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.data-table tbody th { font-weight: 400; white-space: nowrap; }
+.data-table td.negative { color: var(--negative); }
+.data-table td.tightest { font-weight: 600; }
 
 .badge {
   display: inline-block;

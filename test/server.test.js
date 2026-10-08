@@ -1,5 +1,10 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createServer } from "../server.js";
 
 let server;
@@ -29,6 +34,9 @@ const publicFiles = {
   "/calc.js": /^text\/javascript/,
   "/backup.js": /^text\/javascript/,
   "/rules.js": /^text\/javascript/,
+  "/format.js": /^text\/javascript/,
+  "/storage.js": /^text\/javascript/,
+  "/checkins.js": /^text\/javascript/,
   "/styles.css": /^text\/css/,
 };
 
@@ -77,4 +85,45 @@ test("responses carry security headers", async () => {
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
     assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
   }
+});
+
+const rawGet = (path) =>
+  new Promise((resolve, reject) => {
+    const { port } = server.address();
+    const request = http.request({ host: "127.0.0.1", port, path, timeout: 2000 }, (response) => {
+      response.resume();
+      response.on("end", () => resolve(response.statusCode));
+    });
+    request.on("timeout", () => request.destroy(new Error("no answer")));
+    request.on("error", reject);
+    request.end();
+  });
+
+test("a request path that is not a valid URL is refused and the server keeps serving", async () => {
+  assert.equal(await rawGet("//x:99999/app.js"), 404);
+  assert.equal((await get("/")).status, 200);
+});
+
+test("a path starting with two slashes is not treated as the app page", async () => {
+  assert.equal((await get("//app.js")).status, 404);
+});
+
+test("a file that cannot be read gives a 500 and the server keeps running", async () => {
+  const emptyRoot = pathToFileURL(`${mkdtempSync(join(tmpdir(), "empty-root-"))}${sep}`);
+  const broken = createServer({ root: emptyRoot });
+  await new Promise((resolve) => broken.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${broken.address().port}`;
+    const options = { signal: AbortSignal.timeout(2000) };
+    assert.equal((await fetch(`${url}/`, options)).status, 500);
+    assert.equal((await fetch(`${url}/`, options)).status, 500);
+  } finally {
+    await new Promise((resolve) => broken.close(resolve));
+  }
+});
+
+test("the content security policy forbids framing and plugins", async () => {
+  const policy = (await get("/")).headers.get("content-security-policy");
+  assert.match(policy, /frame-ancestors 'none'/);
+  assert.match(policy, /object-src 'none'/);
 });

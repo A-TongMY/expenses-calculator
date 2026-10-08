@@ -1,9 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  isActiveIn,
+  checkInGap,
   lifestyleMonthlyCost,
   monthlyCost,
   projection,
+  recordCheckIn,
   remaining,
   totalLifestyleCost,
   tightestMonth,
@@ -279,4 +282,87 @@ test("the tightest month can be read for the baseline or with scenarios", () => 
   );
   assert.equal(tightestMonth(months).month, "2027-05");
   assert.equal(tightestMonth(months, { withScenarios: true }).month, "2027-03");
+});
+
+const food = { low: 400, high: 600 };
+
+test("spending below the estimate range is under by the shortfall", () => {
+  assert.deepEqual(checkInGap({ ...food, actual: 350 }), { kind: "under", amount: 50 });
+});
+
+test("spending above the estimate range is over by the excess", () => {
+  assert.deepEqual(checkInGap({ ...food, actual: 650 }), { kind: "over", amount: 50 });
+});
+
+test("spending inside the estimate range, including both ends, is within it", () => {
+  for (const actual of [400, 500, 600]) {
+    assert.deepEqual(checkInGap({ ...food, actual }), { kind: "within", amount: 0 });
+  }
+});
+
+test("a gap is rounded to the sen so float noise never shows", () => {
+  assert.deepEqual(checkInGap({ ...food, actual: 600.1 }), { kind: "over", amount: 0.1 });
+});
+
+
+
+const foodItem = { id: "l1", name: "Food", low: 400, high: 600, everyMonths: 1 };
+const salonItem = { id: "l2", name: "Salon", low: 120, high: 210, everyMonths: 3 };
+const septFood = { month: "2026-09", itemId: "l1", name: "Food", low: 400, high: 600, actual: 520 };
+const octFood = { month: "2026-10", itemId: "l1", name: "Food", low: 400, high: 600, actual: 480 };
+
+test("recording a first check-in snapshots the item's name and monthly estimate with what was spent", () => {
+  assert.deepEqual(recordCheckIn([septFood], salonItem, "2026-10", 150), [
+    septFood,
+    { month: "2026-10", itemId: "l2", name: "Salon", low: 40, high: 70, actual: 150 },
+  ]);
+});
+
+test("recording leaves the original list untouched", () => {
+  const original = [septFood];
+  recordCheckIn(original, salonItem, "2026-10", 150);
+  assert.deepEqual(original, [septFood]);
+});
+
+test("recording again for the same item and month replaces the earlier actual", () => {
+  const result = recordCheckIn([septFood, octFood], foodItem, "2026-10", 505);
+  assert.deepEqual(result, [septFood, { ...octFood, actual: 505 }]);
+});
+
+test("updating a check-in never rewrites the name or estimate it was first compared against", () => {
+  const edited = { ...foodItem, name: "Groceries", low: 900, high: 1200 };
+  const result = recordCheckIn([octFood], edited, "2026-10", 505);
+  assert.deepEqual(result, [{ month: "2026-10", itemId: "l1", name: "Food", low: 400, high: 600, actual: 505 }]);
+});
+
+test("an item is active from its start month to its end month inclusive, and always when it has neither", () => {
+  const item = { startMonth: "2026-10", endMonth: "2026-12" };
+  assert.equal(isActiveIn(item, "2026-09"), false);
+  assert.equal(isActiveIn(item, "2026-10"), true);
+  assert.equal(isActiveIn(item, "2026-12"), true);
+  assert.equal(isActiveIn(item, "2027-01"), false);
+  assert.equal(isActiveIn({}, "2026-10"), true);
+});
+
+test("a gap smaller than a sen counts as within the estimate", () => {
+  assert.deepEqual(checkInGap({ low: 400, high: 600, actual: 600.004 }), { kind: "within", amount: 0 });
+  assert.deepEqual(checkInGap({ low: 400, high: 600, actual: 399.996 }), { kind: "within", amount: 0 });
+});
+
+test("switching a scenario on or off does not move the baseline's tightest month", () => {
+  const withLateScenario = (on) => ({
+    income: 1000,
+    commitments: [
+      { amount: 900, everyMonths: 1, startMonth: "2027-12" },
+      { amount: 50, everyMonths: 1, endMonth: "2028-06", scenario: { on } },
+    ],
+    lifestyle: [],
+  });
+  const off = projection(withLateScenario(false), "2026-10");
+  const on = projection(withLateScenario(true), "2026-10");
+  assert.equal(off.length, 12);
+  assert.equal(on.length, 21);
+  assert.equal(tightestMonth(off).month, "2026-10");
+  assert.equal(tightestMonth(on).month, "2026-10");
+  assert.equal(tightestMonth(on, { withScenarios: true }).month, "2027-12");
 });

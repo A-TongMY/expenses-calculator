@@ -1,6 +1,8 @@
 # Expenses Calculator
 
-A personal expenses calculator: enter your monthly income and your commitments, and see what remains each month. A static site in plain HTML, CSS and JavaScript, with no build step and no dependencies. Amounts are in MYR.
+A personal expenses calculator. Enter your monthly income, your fixed commitments and your varying lifestyle spending (as a low and a high estimate), and see what remains each month as a best-to-worst range. A month-by-month projection honours start and end months and highlights the tightest month. Mark a commitment as a scenario to see, side by side, whether you could cope with something you are only considering. At month end, check in what you actually spent to see how it compares with your estimates.
+
+It is a static site in plain HTML, CSS and JavaScript, with no build step and no dependencies. Amounts are in MYR. The app shows the numbers and leaves the judgement to you.
 
 Your data is stored in your browser only (`localStorage`). Nothing is sent to a server. Use **Export backup** to keep a copy or move to another device, and keep the exported file private.
 
@@ -29,4 +31,4 @@ The app is just static files, so it runs anywhere. Each site address has its own
 2. Railway detects Node and runs `npm start`, which starts `server.js` on the `PORT` Railway provides. No configuration or environment variables are needed.
 3. Under **Settings → Networking**, choose **Generate Domain**.
 
-`server.js` serves only the six files the app needs (`index.html`, `app.js`, `calc.js`, `backup.js`, `rules.js`, `styles.css`) and adds basic security headers. If you add a new file the app loads, add it to `PUBLIC_FILES` in `server.js`.
+`server.js` serves only the files the app loads (listed in `PUBLIC_FILES` in `server.js`) and adds security headers. If you add a new file the app loads, add it to that list and to the list in `test/server.test.js`. GitHub Pages sends no custom headers, so `index.html` carries its own Content-Security-Policy tag.

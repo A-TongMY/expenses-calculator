@@ -1,6 +1,7 @@
 import { lifestyleMonthlyCost, monthlyCost, projection, tightestMonth } from "./calc.js";
 import { importBackup, exportBackup } from "./backup.js";
 import { setupCheckIns } from "./checkins.js";
+import { setupHome } from "./home.js";
 import { setupHouses } from "./houses.js";
 import { cadenceLabel, currentMonth, money, monthLabel, periodLabel, range } from "./format.js";
 import {
@@ -321,6 +322,7 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
 
 const checkIns = setupCheckIns({ getState: () => state, commit });
 const houses = setupHouses({ getState: () => state, commit, newId });
+const home = setupHome({ getState: () => state });
 
 let shownMonth = null;
 
@@ -399,6 +401,7 @@ function renderAll() {
   for (const section of sections) section.render();
   checkIns.render();
   houses.render();
+  home.render();
 }
 
 function syncIncomeField() {
@@ -411,17 +414,19 @@ function showBackupMessage(message) {
 
 syncIncomeField();
 
-const PAGES = ["expenses", "houses"];
+const PAGES = ["home", "expenses", "houses"];
 
 function showPage() {
   const requested = location.hash.replace(/^#\/?/, "");
-  const page = PAGES.includes(requested) ? requested : "expenses";
+  const page = PAGES.includes(requested) ? requested : "home";
   for (const name of PAGES) {
     $(`page-${name}`).hidden = name !== page;
     const link = document.querySelector(`[data-nav="${name}"]`);
     if (name === page) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
+  // Income changes on the Expenses page, so the dashboard is redrawn whenever it is shown.
+  if (page === "home") home.render();
 }
 
 showPage();

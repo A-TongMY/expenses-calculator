@@ -19,6 +19,7 @@
     <symbol id="i-check" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
     <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
     <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
@@ -32,10 +33,12 @@
 
   <header class="topbar">
     <nav class="topbar-inner" aria-label="Main">
-      <svg class="logo" viewBox="0 0 32 32" role="img" aria-label="Expenses Calculator">
-        <rect width="32" height="32" rx="8" fill="currentColor"/>
-        <path class="glyph" d="M7 15.5 16 8l9 7.5M10 24v-6M16 24v-9M22 24v-6"/>
-      </svg>
+      <a href="#/home" class="logo-link" data-nav="home" aria-label="Home">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="currentColor"/>
+          <path class="glyph" d="M7 15.5 16 8l9 7.5M10 24v-6M16 24v-9M22 24v-6"/>
+        </svg>
+      </a>
       <a href="#/expenses" data-nav="expenses"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg><span>Expenses</span></a>
       <a href="#/houses" data-nav="houses"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Houses</span></a>
     </nav>
@@ -44,7 +47,18 @@
   <main>
     <p id="storage-notice" class="notice" role="alert" hidden></p>
 
-    <div id="page-expenses">
+    <div id="page-home">
+      <details class="panel" data-panel="home-expenses" open>
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg><span class="title">Expenses</span><a class="open-link" href="#/expenses" aria-label="Open Expenses"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body cards" id="home-expenses"></div>
+      </details>
+      <details class="panel" data-panel="home-houses" open>
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span class="title">Houses</span><a class="open-link" href="#/houses" aria-label="Open Houses"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body cards" id="home-houses"></div>
+      </details>
+    </div>
+
+    <div id="page-expenses" hidden>
       <section class="overview" aria-label="Overview">
         <label class="field income">
           <span>Income (MYR)</span>

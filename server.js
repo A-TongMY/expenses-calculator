@@ -16,6 +16,9 @@ const PUBLIC_FILES = new Set([
   "loan.js",
   "houses.js",
   "ui.js",
+  "charts.js",
+  "reports.js",
+  "home.js",
 ]);
 
 const CONTENT_TYPES = {

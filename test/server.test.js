@@ -40,6 +40,9 @@ const publicFiles = {
   "/loan.js": /^text\/javascript/,
   "/houses.js": /^text\/javascript/,
   "/ui.js": /^text\/javascript/,
+  "/charts.js": /^text\/javascript/,
+  "/reports.js": /^text\/javascript/,
+  "/home.js": /^text\/javascript/,
   "/styles.css": /^text\/css/,
 };
 

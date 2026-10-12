@@ -3,7 +3,7 @@ import { exportBackup, importBackup } from "./backup.js";
 export const STORAGE_KEY = "expenses-calculator";
 const UNREADABLE_PREFIX = `${STORAGE_KEY}:unreadable:`;
 
-export const blankState = () => ({ income: 0, commitments: [], lifestyle: [], checkIns: [] });
+export const blankState = () => ({ income: 0, commitments: [], lifestyle: [], checkIns: [], houses: [] });
 
 function keepUnreadableCopy(saved) {
   try {

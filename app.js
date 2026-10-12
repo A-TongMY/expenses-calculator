@@ -1,6 +1,7 @@
 import { lifestyleMonthlyCost, monthlyCost, projection, tightestMonth } from "./calc.js";
 import { importBackup, exportBackup } from "./backup.js";
 import { setupCheckIns } from "./checkins.js";
+import { setupHouses } from "./houses.js";
 import { cadenceLabel, currentMonth, money, monthLabel, periodLabel, range } from "./format.js";
 import {
   MAX_AMOUNT,
@@ -334,6 +335,7 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
 );
 
 const checkIns = setupCheckIns({ getState: () => state, commit });
+const houses = setupHouses({ getState: () => state, commit, newId });
 
 let shownMonth = null;
 
@@ -413,6 +415,7 @@ function renderAll() {
   renderOverview();
   for (const section of sections) section.render();
   checkIns.render();
+  houses.render();
 }
 
 function syncIncomeField() {
@@ -424,6 +427,25 @@ function showBackupMessage(message) {
 }
 
 syncIncomeField();
+
+const PAGES = ["expenses", "houses"];
+
+function showPage() {
+  const requested = location.hash.replace(/^#\/?/, "");
+  const page = PAGES.includes(requested) ? requested : "expenses";
+  for (const name of PAGES) {
+    $(`page-${name}`).hidden = name !== page;
+    const link = document.querySelector(`[data-nav="${name}"]`);
+    if (name === page) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+}
+
+showPage();
+window.addEventListener("hashchange", () => {
+  showPage();
+  window.scrollTo(0, 0);
+});
 
 els.income.addEventListener("input", () => {
   const value = Number(els.income.value);
@@ -488,6 +510,7 @@ els.importFile.addEventListener("change", async () => {
     const saved = persist();
     syncIncomeField();
     for (const section of sections) section.reset();
+    houses.reset();
     renderAll();
     checkIns.syncForm();
     showBackupMessage(

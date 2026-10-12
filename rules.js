@@ -1,7 +1,12 @@
+import { repaysInFull } from "./loan.js";
+
 export const MAX_AMOUNT = 1_000_000_000;
 export const MAX_EVERY_MONTHS = 120;
 export const MAX_NAME_LENGTH = 80;
 export const MAX_ITEMS = 2000;
+export const MAX_HOUSES = 50;
+export const MAX_TERM_MONTHS = 600;
+export const MAX_RATE_PERCENT = 100;
 
 export const isMoney = (value) =>
   Number.isFinite(value) && value >= 0 && value <= MAX_AMOUNT;
@@ -47,3 +52,19 @@ export const isValidCheckIn = (checkIn) =>
   isMoney(checkIn.high) &&
   checkIn.low <= checkIn.high &&
   isMoney(checkIn.actual);
+
+export const isValidHouse = (house) =>
+  typeof house?.id === "string" &&
+  isName(house.name) &&
+  isMoney(house.loan) &&
+  house.loan > 0 &&
+  (house.price === undefined || (isMoney(house.price) && house.price >= house.loan)) &&
+  Number.isFinite(house.ratePercent) &&
+  house.ratePercent >= 0 &&
+  house.ratePercent <= MAX_RATE_PERCENT &&
+  Number.isInteger(house.termMonths) &&
+  house.termMonths >= 1 &&
+  house.termMonths <= MAX_TERM_MONTHS &&
+  isMonth(house.startMonth) &&
+  (house.installment === undefined ||
+    (isMoney(house.installment) && house.installment > 0 && repaysInFull(house)));

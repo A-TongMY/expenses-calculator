@@ -37,6 +37,8 @@ const publicFiles = {
   "/format.js": /^text\/javascript/,
   "/storage.js": /^text\/javascript/,
   "/checkins.js": /^text\/javascript/,
+  "/loan.js": /^text\/javascript/,
+  "/houses.js": /^text\/javascript/,
   "/styles.css": /^text\/css/,
 };
 

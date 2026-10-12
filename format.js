@@ -25,3 +25,14 @@ export const periodLabel = ({ startMonth, endMonth }) =>
   [startMonth && `from ${monthLabel(startMonth)}`, endMonth && `until ${monthLabel(endMonth)}`]
     .filter(Boolean)
     .join(" ");
+
+export const termLabel = (months) => {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return [
+    years && `${years} ${years === 1 ? "year" : "years"}`,
+    rest && `${rest} ${rest === 1 ? "month" : "months"}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+};

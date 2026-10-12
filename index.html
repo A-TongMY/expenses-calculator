@@ -9,10 +9,18 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main>
-    <h1>Expenses Calculator</h1>
+  <header class="topbar">
+    <nav class="topbar-inner" aria-label="Main">
+      <a href="#/expenses" data-nav="expenses">Expenses</a>
+      <a href="#/houses" data-nav="houses">Houses</a>
+    </nav>
+  </header>
 
+  <main>
     <p id="storage-notice" class="notice" role="alert" hidden></p>
+
+    <div id="page-expenses">
+    <h1>Expenses Calculator</h1>
 
     <section class="summary" aria-labelledby="summary-heading">
       <h2 id="summary-heading" class="visually-hidden">Summary</h2>
@@ -194,6 +202,87 @@
         </table>
       </div>
     </section>
+
+    </div>
+
+    <div id="page-houses" hidden>
+      <h1>Houses</h1>
+      <p class="muted">Keep track of each housing loan: what you owe, how much interest you pay, and what each month's installment is made of.</p>
+
+      <section class="summary" id="houses-overview" aria-labelledby="houses-overview-heading" hidden>
+        <h2 id="houses-overview-heading" class="visually-hidden">Overview of all houses</h2>
+        <dl class="figures">
+          <div class="remaining">
+            <dt>Installments due this month</dt>
+            <dd id="houses-total-monthly">RM 0.00</dd>
+          </div>
+          <div>
+            <dt>Outstanding balance</dt>
+            <dd id="houses-total-outstanding">RM 0.00</dd>
+          </div>
+          <div>
+            <dt>Principal repaid so far</dt>
+            <dd id="houses-total-principal">RM 0.00</dd>
+          </div>
+          <div>
+            <dt>Interest paid so far</dt>
+            <dd id="houses-total-interest-paid">RM 0.00</dd>
+          </div>
+          <div>
+            <dt>Interest over the whole loans</dt>
+            <dd id="houses-total-interest">RM 0.00</dd>
+          </div>
+        </dl>
+        <p class="tightest-note">Installments due up to and including this month count as paid.</p>
+      </section>
+
+      <section aria-labelledby="houses-heading">
+        <h2 id="houses-heading">Housing loans</h2>
+        <ul class="houses" id="house-list"></ul>
+        <p class="muted" id="house-empty" hidden>No houses yet. Add your first loan below.</p>
+
+        <form class="card" id="house-form" autocomplete="off">
+          <h3 id="house-form-heading">Add a house</h3>
+          <label class="field">
+            <span>Name</span>
+            <input name="name" type="text" required placeholder="e.g. Semenyih terrace" autocomplete="off" data-limit="name">
+          </label>
+          <div class="pair">
+            <label class="field">
+              <span>Property price (optional, MYR)</span>
+              <input name="price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+            </label>
+            <label class="field">
+              <span>Loan amount (MYR)</span>
+              <input name="loan" type="number" required min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+            </label>
+          </div>
+          <div class="pair">
+            <label class="field">
+              <span>Interest rate (% a year)</span>
+              <input name="ratePercent" type="number" required min="0" max="100" step="0.01" inputmode="decimal" placeholder="4.00" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Loan term (years)</span>
+              <input name="years" type="number" required min="0.1" step="any" inputmode="decimal" placeholder="30" autocomplete="off">
+            </label>
+          </div>
+          <label class="field">
+            <span>First installment month</span>
+            <input name="startMonth" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Bank's monthly installment (optional, MYR)</span>
+            <input name="installment" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Leave empty to calculate it" autocomplete="off" data-limit="amount">
+          </label>
+          <p class="muted" id="house-hint"></p>
+          <div class="actions">
+            <button type="submit" id="house-submit">Add house</button>
+            <button type="button" class="secondary" id="house-cancel" hidden>Cancel</button>
+          </div>
+        </form>
+      </section>
+    </div>
 
     <section aria-labelledby="backup-heading">
       <h2 id="backup-heading">Backup</h2>

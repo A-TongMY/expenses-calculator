@@ -79,3 +79,29 @@ _Avoid_: Pessimistic, minimum
 **Remaining**:
 What is left of the Income after all Expenses, as a span from its Worst case to its Best case.
 _Avoid_: Balance, surplus, savings
+
+## Houses
+
+**House**:
+A housing loan being tracked: its Loan amount, yearly interest rate, term and first installment month, and optionally the property price and the bank's own Installment.
+_Avoid_: Property, mortgage account
+
+**Loan amount**:
+The money borrowed for a House. The property price minus the down payment, when a price is entered.
+_Avoid_: Principal (for the starting amount), debt
+
+**Installment**:
+The fixed amount paid to the bank each month. Calculated from the Loan amount, rate and term unless the user enters the bank's own figure.
+_Avoid_: Payment (as the name of the fixed amount), EMI
+
+**Schedule**:
+The month-by-month list of every Installment of a House, split into interest and principal, with the balance left after each.
+_Avoid_: Amortization table, statement
+
+**Outstanding balance**:
+What is still owed on a House after the Installments due up to and including this month.
+_Avoid_: Remaining (reserved for what is left of Income)
+
+**Total payable**:
+Everything paid over the whole life of a House loan: the Loan amount plus all the interest.
+_Avoid_: Total cost

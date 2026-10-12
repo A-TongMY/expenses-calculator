@@ -13,6 +13,8 @@ const PUBLIC_FILES = new Set([
   "format.js",
   "storage.js",
   "checkins.js",
+  "loan.js",
+  "houses.js",
 ]);
 
 const CONTENT_TYPES = {

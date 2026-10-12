@@ -1,5 +1,5 @@
 // EPSILON fixes 1.005 (really 1.00499...); "+ 0" turns -0 into 0.
-const roundToSen = (amount) =>
+export const roundToSen = (amount) =>
   (Math.sign(amount) * Math.round((Math.abs(amount) + Number.EPSILON) * 100)) / 100 + 0;
 
 export function monthlyCost({ amount, everyMonths }) {
@@ -37,12 +37,12 @@ export function remaining({ income, commitments, lifestyle }) {
 const MIN_PROJECTION_MONTHS = 12;
 const MAX_PROJECTION_MONTHS = 24;
 
-const monthIndex = (month) => {
+export const monthIndex = (month) => {
   const [year, number] = month.split("-").map(Number);
   return year * 12 + (number - 1);
 };
 
-const monthAt = (index) =>
+export const monthAt = (index) =>
   `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
 
 export const isActiveIn = ({ startMonth, endMonth }, month) =>

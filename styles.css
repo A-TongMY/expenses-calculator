@@ -158,3 +158,24 @@ button.danger { color: var(--negative); border-color: var(--negative); backgroun
 .figures.has-scenarios .remaining { grid-column: auto; }
 .figures.has-scenarios .remaining dd { font-size: 1.3rem; }
 .figures.has-scenarios .remaining dd.hint { font-size: 0.85rem; font-weight: 400; }
+
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+.topbar-inner { max-width: 40rem; margin: 0 auto; padding: 0 1rem; display: flex; gap: 0.25rem; }
+.topbar-inner a { padding: 0.8rem 0.9rem; color: var(--muted); text-decoration: none; font-weight: 600; border-bottom: 3px solid transparent; }
+.topbar-inner a:hover { color: var(--text); }
+.topbar-inner a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+.topbar-inner a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.houses { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.house { background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem; }
+.house-head { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; justify-content: space-between; }
+.house-head h3 { margin: 0; font-size: 1.1rem; }
+.house .figures { margin-top: 0.75rem; }
+.house .figures dd { font-size: 1.05rem; }
+.house progress { width: 100%; height: 0.6rem; margin: 0.75rem 0 0.25rem; accent-color: var(--accent); }
+.house .actions { margin-top: 0.75rem; }
+.schedule { margin-top: 0.75rem; }
+.schedule summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 0.25rem 0; }
+.schedule .table-wrap { max-height: 24rem; overflow-y: auto; margin-top: 0.5rem; }
+.data-table tr.paid td, .data-table tr.paid th { color: var(--muted); }
+.data-table tr.current td, .data-table tr.current th { font-weight: 600; }

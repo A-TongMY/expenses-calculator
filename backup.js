@@ -1,18 +1,22 @@
 import {
+  MAX_HOUSES,
   MAX_ITEMS,
   isMoney,
   isValidCheckIn,
   isValidCommitment,
+  isValidHouse,
   isValidLifestyle,
 } from "./rules.js";
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const LIFESTYLE_SINCE = 2;
 const CHECK_INS_SINCE = 5;
+const HOUSES_SINCE = 6;
 
 const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth", "scenario"];
 const LIFESTYLE_FIELDS = ["id", "name", "low", "high", "everyMonths", "startMonth", "endMonth"];
 const CHECK_IN_FIELDS = ["month", "itemId", "name", "low", "high", "actual"];
+const HOUSE_FIELDS = ["id", "name", "price", "loan", "ratePercent", "termMonths", "startMonth", "installment"];
 
 const pick = (item, fields) =>
   Object.fromEntries(fields.filter((field) => item[field] !== undefined).map((field) => [field, item[field]]));
@@ -22,9 +26,9 @@ const toCommitment = (item) => {
   return commitment.scenario ? { ...commitment, scenario: { on: commitment.scenario.on } } : commitment;
 };
 
-const isValidList = (items, isValid, keyOf = (item) => item.id) =>
+const isValidList = (items, isValid, keyOf = (item) => item.id, limit = MAX_ITEMS) =>
   Array.isArray(items) &&
-  items.length <= MAX_ITEMS &&
+  items.length <= limit &&
   items.every(isValid) &&
   new Set(items.map(keyOf)).size === items.length;
 
@@ -35,13 +39,15 @@ const upgrade = (data, version) => ({
   ...data,
   lifestyle: version < LIFESTYLE_SINCE ? [] : data?.lifestyle,
   checkIns: version < CHECK_INS_SINCE ? [] : data?.checkIns,
+  houses: version < HOUSES_SINCE ? [] : data?.houses,
 });
 
 const isState = (data) =>
   isMoney(data.income) &&
   isValidList(data.commitments, isValidCommitment) &&
   isValidList(data.lifestyle, isValidLifestyle) &&
-  isValidList(data.checkIns, isValidCheckIn, checkInKey);
+  isValidList(data.checkIns, isValidCheckIn, checkInKey) &&
+  isValidList(data.houses, isValidHouse, undefined, MAX_HOUSES);
 
 export function exportBackup(state) {
   return JSON.stringify({ schemaVersion: SCHEMA_VERSION, data: state }, null, 2);
@@ -71,5 +77,6 @@ export function importBackup(file) {
     commitments: data.commitments.map(toCommitment),
     lifestyle: data.lifestyle.map((item) => pick(item, LIFESTYLE_FIELDS)),
     checkIns: data.checkIns.map((item) => pick(item, CHECK_IN_FIELDS)),
+    houses: data.houses.map((item) => pick(item, HOUSE_FIELDS)),
   };
 }

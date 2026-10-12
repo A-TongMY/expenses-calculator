@@ -4,6 +4,11 @@ A personal expenses calculator. Enter your monthly income, your fixed commitment
 
 It is a static site in plain HTML, CSS and JavaScript, with no build step and no dependencies. Amounts are in MYR. The app shows the numbers and leaves the judgement to you.
 
+The app has two pages, switched from the bar at the top:
+
+- **Expenses**: the calculator described above.
+- **Houses**: keep track of housing loans. For each house enter the loan amount, the yearly interest rate, the term and the first installment month (and, optionally, the property price and the exact installment your bank charges). The page shows the monthly installment, the outstanding balance, principal and interest paid so far, total interest and total payable over the whole loan, plus a month-by-month schedule that splits every installment into interest and principal. Interest is charged on the reducing balance each month.
+
 Your data is stored in your browser only (`localStorage`). Nothing is sent to a server. Use **Export backup** to keep a copy or move to another device, and keep the exported file private.
 
 ## Run locally

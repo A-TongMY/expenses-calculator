@@ -39,6 +39,7 @@ const publicFiles = {
   "/checkins.js": /^text\/javascript/,
   "/loan.js": /^text\/javascript/,
   "/houses.js": /^text\/javascript/,
+  "/ui.js": /^text\/javascript/,
   "/styles.css": /^text\/css/,
 };
 

@@ -13,6 +13,7 @@ import {
   isValidLifestyle,
 } from "./rules.js";
 import { STORAGE_KEY, loadState, saveState } from "./storage.js";
+import { el, iconButton, rememberPanels } from "./ui.js";
 
 const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
@@ -20,7 +21,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   notice: $("storage-notice"),
   income: $("income"),
-  figures: document.querySelector(".figures"),
+  figures: $("overview-stats"),
   commitmentsLabel: $("commitments-label"),
   totalCommitments: $("total-commitments"),
   totalLifestyle: $("total-lifestyle"),
@@ -42,9 +43,11 @@ const els = {
   backupMessage: $("backup-message"),
 };
 
-for (const el of document.querySelectorAll('[data-limit="amount"]')) el.max = MAX_AMOUNT;
-for (const el of document.querySelectorAll('[data-limit="months"]')) el.max = MAX_EVERY_MONTHS;
-for (const el of document.querySelectorAll('[data-limit="name"]')) el.maxLength = MAX_NAME_LENGTH;
+for (const input of document.querySelectorAll('[data-limit="amount"]')) input.max = MAX_AMOUNT;
+for (const input of document.querySelectorAll('[data-limit="months"]')) input.max = MAX_EVERY_MONTHS;
+for (const input of document.querySelectorAll('[data-limit="name"]')) input.maxLength = MAX_NAME_LENGTH;
+
+rememberPanels();
 
 // crypto.randomUUID only exists on secure origins, not on a LAN address like http://192.168.1.5.
 const newId = () =>
@@ -82,7 +85,6 @@ function commit(next) {
 
 const SECTIONS = {
   commitments: {
-    noun: "commitment",
     scenarios: true,
     amountFields: ["amount"],
     isValid: isValidCommitment,
@@ -90,10 +92,9 @@ const SECTIONS = {
       [`${money.format(item.amount)} ${cadenceLabel(item.everyMonths)}`, periodLabel(item)]
         .filter(Boolean)
         .join(" · "),
-    cost: (item) => `${money.format(monthlyCost(item))} / month`,
+    cost: (item) => `${money.format(monthlyCost(item))} /mo`,
   },
   lifestyle: {
-    noun: "lifestyle spending",
     amountFields: ["low", "high"],
     isValid: isValidLifestyle,
     detail: (item) =>
@@ -102,7 +103,7 @@ const SECTIONS = {
         .join(" · "),
     cost: (item) => {
       const cost = lifestyleMonthlyCost(item);
-      return `${range(cost.low, cost.high)} / month`;
+      return `${range(cost.low, cost.high)} /mo`;
     },
     checkForm: (field) => {
       const lowAboveHigh =
@@ -130,13 +131,14 @@ function createSection(root, key, config) {
   const list = part("list");
   const emptyMessage = part("empty");
   const form = part("form");
+  const addPanel = part("add");
+  const count = part("count");
   const heading = part("form-heading");
   const submit = part("submit");
   const cancel = part("cancel");
   const customField = part("custom-field");
   const field = (name) => form.elements.namedItem(name);
   const addHeading = heading.textContent;
-  const addLabel = submit.textContent;
   let editingId = null;
 
   const find = (id) => state[key].find((item) => item.id === id);
@@ -156,11 +158,12 @@ function createSection(root, key, config) {
   }
 
   function reset() {
+    // Finishing an edit folds the form away; adding keeps it open for the next item.
+    if (editingId !== null) addPanel.open = false;
     editingId = null;
     form.reset();
     clearValidity();
     heading.textContent = addHeading;
-    submit.textContent = addLabel;
     cancel.hidden = true;
     syncCustomField();
   }
@@ -181,9 +184,9 @@ function createSection(root, key, config) {
       field("customMonths").value = item.everyMonths;
     }
     syncCustomField();
-    heading.textContent = `Edit ${config.noun}`;
-    submit.textContent = "Save changes";
+    heading.textContent = "Edit";
     cancel.hidden = false;
+    addPanel.open = true;
     field("name").focus();
   }
 
@@ -199,77 +202,54 @@ function createSection(root, key, config) {
   }
 
   function scenarioControls(item) {
-    const toggle = document.createElement("label");
-    toggle.className = "switch";
+    const toggle = el("label", "switch");
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = item.scenario.on;
     box.setAttribute("role", "switch");
     box.setAttribute("aria-label", `Include ${item.name} in the figures`);
+    box.title = "Include";
     box.addEventListener("change", () => {
       replaceItem(item.id, (other) => ({ ...other, scenario: { on: box.checked } }));
       // The list was just rebuilt, so the focused switch is gone: give focus back to its replacement.
       const row = [...list.children].find((other) => other.dataset.id === item.id);
       row?.querySelector("input[role=switch]")?.focus();
     });
-    const text = document.createElement("span");
-    text.textContent = "Include";
-    toggle.append(box, text);
+    toggle.append(box);
 
-    const makeReal = document.createElement("button");
-    makeReal.type = "button";
-    makeReal.className = "secondary";
-    makeReal.textContent = "Make real";
-    makeReal.setAttribute("aria-label", `Make ${item.name} a real commitment`);
-    makeReal.addEventListener("click", () => {
-      if (editingId === item.id) field("scenario").checked = false;
-      replaceItem(item.id, ({ scenario, ...real }) => real);
+    const makeReal = iconButton({
+      name: "real",
+      label: `Make ${item.name} a real commitment`,
+      className: "positive",
+      onClick: () => {
+        if (editingId === item.id) field("scenario").checked = false;
+        replaceItem(item.id, ({ scenario, ...real }) => real);
+      },
     });
     return [toggle, makeReal];
   }
 
   function buildRow(item) {
-    const row = document.createElement("li");
+    const row = el("li");
     row.dataset.id = item.id;
 
-    const text = document.createElement("div");
-    const name = document.createElement("div");
-    name.className = "item-name";
-    name.textContent = item.name;
-    const detail = document.createElement("div");
-    detail.className = "item-detail";
-    detail.textContent = config.detail(item);
-    text.append(name, detail);
+    const name = el("div", "name", item.name);
     if (item.scenario) {
       row.classList.add("scenario");
       row.classList.toggle("off", !item.scenario.on);
-      const tag = document.createElement("span");
-      tag.className = "badge";
-      tag.textContent = "Scenario, not yet real";
-      name.append(" ", tag);
+      name.append(" ", el("span", "chip", "Scenario"));
     }
+    const detail = el("div", "detail", config.detail(item));
+    const cost = el("div", "cost", config.cost(item));
 
-    const cost = document.createElement("div");
-    cost.className = "item-cost";
-    cost.textContent = config.cost(item);
+    const actions = el("div", "actions");
+    actions.append(
+      ...(item.scenario ? scenarioControls(item) : []),
+      iconButton({ name: "edit", label: `Edit ${item.name}`, onClick: () => startEdit(item.id) }),
+      iconButton({ name: "trash", label: `Delete ${item.name}`, className: "danger", onClick: () => remove(item.id) }),
+    );
 
-    const actions = document.createElement("div");
-    actions.className = "actions";
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.className = "secondary";
-    edit.textContent = "Edit";
-    edit.setAttribute("aria-label", `Edit ${item.name}`);
-    edit.addEventListener("click", () => startEdit(item.id));
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "danger";
-    del.textContent = "Delete";
-    del.setAttribute("aria-label", `Delete ${item.name}`);
-    del.addEventListener("click", () => remove(item.id));
-    actions.append(...(item.scenario ? scenarioControls(item) : []), edit, del);
-
-    row.append(text, cost, actions);
+    row.append(name, cost, detail, actions);
     return row;
   }
 
@@ -277,10 +257,15 @@ function createSection(root, key, config) {
     if (editingId && !find(editingId)) reset();
     list.replaceChildren(...state[key].map(buildRow));
     emptyMessage.hidden = state[key].length > 0;
+    count.textContent = state[key].length;
+    count.hidden = state[key].length === 0;
   }
 
   field("cadence").addEventListener("change", syncCustomField);
-  cancel.addEventListener("click", reset);
+  cancel.addEventListener("click", () => {
+    reset();
+    addPanel.open = false;
+  });
 
   form.addEventListener("input", clearValidity);
 
@@ -340,7 +325,7 @@ const houses = setupHouses({ getState: () => state, commit, newId });
 let shownMonth = null;
 
 function tightestLine(prefix, month, figures) {
-  return `${prefix}${monthLabel(month)}, worst case ${money.format(figures.worst)}.`;
+  return `${prefix}${monthLabel(month)} · ${money.format(figures.worst)}`;
 }
 
 function tableCell(figures, isTightest) {
@@ -350,7 +335,7 @@ function tableCell(figures, isTightest) {
   if (isTightest) {
     cell.classList.add("tightest");
     const badge = document.createElement("span");
-    badge.className = "badge";
+    badge.className = "chip";
     badge.textContent = "Tightest";
     cell.append(" ", badge);
   }
@@ -365,10 +350,10 @@ function renderOverview() {
   const tightestWith = tightestMonth(months, { withScenarios: true });
   const { best, worst, commitments, lifestyle, withScenarios } = months[0];
 
-  els.commitmentsLabel.textContent = showScenarios ? "Commitments this month, baseline" : "Commitments this month";
+  els.commitmentsLabel.textContent = "Commitments";
   els.totalCommitments.textContent = money.format(commitments);
   els.totalLifestyle.textContent = range(lifestyle.low, lifestyle.high);
-  els.remainingLabel.textContent = showScenarios ? "Remaining this month, baseline" : "Remaining this month";
+  els.remainingLabel.textContent = showScenarios ? "Left · baseline" : "Left";
   els.remaining.textContent = range(worst, best);
   els.remainingHint.hidden = worst === best;
   els.remaining.classList.toggle("negative", worst < 0);
@@ -380,22 +365,20 @@ function renderOverview() {
 
   els.tightest.hidden = !hasData;
   els.tightest.textContent = tightestLine(
-    showScenarios ? "Baseline tightest month: " : "Tightest month in the projection: ",
+    showScenarios ? "Tightest, baseline: " : "Tightest: ",
     tightest.month,
     tightest,
   );
   els.tightestWith.hidden = !hasData || !showScenarios;
   els.tightestWith.textContent = tightestLine(
-    "Tightest month with scenarios: ",
+    "Tightest, with scenarios: ",
     tightestWith.month,
     tightestWith.withScenarios,
   );
 
   els.projectionEmpty.hidden = hasData;
   els.projectionWrap.hidden = !hasData;
-  els.projectionBaselineHeader.textContent = showScenarios
-    ? "Baseline (worst case to best case)"
-    : "Remaining (worst case to best case)";
+  els.projectionBaselineHeader.textContent = showScenarios ? "Baseline" : "Left";
   els.projectionWithHeader.hidden = !showScenarios;
   els.projectionBody.replaceChildren(
     ...months.map((entry) => {
@@ -487,7 +470,7 @@ els.exportButton.addEventListener("click", () => {
   link.download = `expenses-backup-${currentMonth()}-${String(new Date().getDate()).padStart(2, "0")}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showBackupMessage("Backup downloaded. Keep it private: it contains your finances.");
+  showBackupMessage("Downloaded. Keep the file private.");
 });
 
 els.importButton.addEventListener("click", () => els.importFile.click());
@@ -497,13 +480,13 @@ els.importFile.addEventListener("change", async () => {
   els.importFile.value = "";
   if (!file) return;
   if (file.size > MAX_BACKUP_BYTES) {
-    showBackupMessage("That file is too large to be a backup from this app.");
+    showBackupMessage("File too large.");
     return;
   }
   try {
     const imported = importBackup(await file.text());
     if (!confirm("Importing replaces everything currently saved in this browser. Continue?")) {
-      showBackupMessage("Import cancelled. Nothing was changed.");
+      showBackupMessage("Cancelled.");
       return;
     }
     state = imported;
@@ -514,9 +497,7 @@ els.importFile.addEventListener("change", async () => {
     renderAll();
     checkIns.syncForm();
     showBackupMessage(
-      saved
-        ? "Backup imported."
-        : "Backup imported for this session only. It could not be saved in this browser.",
+      saved ? "Imported." : "Imported, but not saved in this browser.",
     );
   } catch (error) {
     showBackupMessage(error.message);

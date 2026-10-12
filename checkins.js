@@ -1,6 +1,7 @@
 import { checkInGap, isActiveIn, lifestyleMonthlyCost, recordCheckIn } from "./calc.js";
 import { currentMonth, money, monthLabel, range } from "./format.js";
 import { MAX_AMOUNT, MAX_ITEMS, isMonth, isValidCheckIn } from "./rules.js";
+import { iconButton } from "./ui.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -30,28 +31,23 @@ export function setupCheckIns({ getState, commit }) {
       return;
     }
     const cost = lifestyleMonthlyCost(item);
-    const parts = [`Estimate: ${range(cost.low, cost.high)} a month, spread evenly.`];
-    if (item.everyMonths > 1) {
-      parts.push(
-        `This item is paid every ${item.everyMonths} months, so one month's spending will often differ from its monthly estimate.`,
-      );
-    }
-    if (existing()) parts.push("Updating keeps the estimate this check-in was first compared against.");
-    hint.textContent = parts.join(" ");
+    const parts = [`Estimate ${range(cost.low, cost.high)} /mo`];
+    if (item.everyMonths > 1) parts.push(`paid every ${item.everyMonths} months`);
+    hint.textContent = parts.join(" · ");
   }
 
   function syncForm() {
     field("month").setCustomValidity("");
     const found = existing();
     field("actual").value = found ? found.actual : "";
-    submit.textContent = found ? "Update check-in" : "Save check-in";
+    submit.textContent = found ? "Update" : "Save";
     updateHint();
   }
 
   function gapText(checkIn) {
     const { kind, amount } = checkInGap(checkIn);
-    if (kind === "within") return "Within estimate";
-    return `${kind === "under" ? "Under" : "Over"} by ${money.format(amount)}`;
+    if (kind === "within") return "Within";
+    return `${kind === "under" ? "Under" : "Over"} ${money.format(amount)}`;
   }
 
   function remove(checkIn) {
@@ -79,13 +75,15 @@ export function setupCheckIns({ getState, commit }) {
       return cell;
     });
     const actions = document.createElement("td");
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "danger";
-    del.textContent = "Delete";
-    del.setAttribute("aria-label", `Delete the ${monthLabel(checkIn.month)} check-in for ${checkIn.name}`);
-    del.addEventListener("click", () => remove(checkIn));
-    actions.append(del);
+    actions.append(
+      iconButton({
+        name: "trash",
+        label: `Delete the ${monthLabel(checkIn.month)} check-in for ${checkIn.name}`,
+        className: "danger",
+        onClick: () => remove(checkIn),
+      }),
+    );
+    if (checkInGap(checkIn).kind === "over") cells[3].classList.add("negative");
     row.append(month, ...cells, actions);
     return row;
   }

@@ -5,14 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; object-src 'none'">
   <title>Expenses Calculator</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M7 15.5 16 8l9 7.5M10 24v-6M16 24v-9M22 24v-6' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M10 2v2M14 2v2M6 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-real" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  </defs>
+  </svg>
+
   <header class="topbar">
     <nav class="topbar-inner" aria-label="Main">
-      <a href="#/expenses" data-nav="expenses">Expenses</a>
-      <a href="#/houses" data-nav="houses">Houses</a>
+      <svg class="logo" viewBox="0 0 32 32" role="img" aria-label="Expenses Calculator">
+        <rect width="32" height="32" rx="8" fill="currentColor"/>
+        <path class="glyph" d="M7 15.5 16 8l9 7.5M10 24v-6M16 24v-9M22 24v-6"/>
+      </svg>
+      <a href="#/expenses" data-nav="expenses"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg><span>Expenses</span></a>
+      <a href="#/houses" data-nav="houses"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Houses</span></a>
     </nav>
   </header>
 
@@ -20,280 +45,281 @@
     <p id="storage-notice" class="notice" role="alert" hidden></p>
 
     <div id="page-expenses">
-    <h1>Expenses Calculator</h1>
-
-    <section class="summary" aria-labelledby="summary-heading">
-      <h2 id="summary-heading" class="visually-hidden">Summary</h2>
-      <label class="field">
-        <span>Monthly income (MYR)</span>
-        <input id="income" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
-      </label>
-      <dl class="figures">
-        <div>
-          <dt id="commitments-label">Commitments this month</dt>
-          <dd id="total-commitments">RM 0.00</dd>
-        </div>
-        <div>
-          <dt>Lifestyle spending this month</dt>
-          <dd id="total-lifestyle">RM 0.00</dd>
-        </div>
-        <div class="remaining">
-          <dt id="remaining-label">Remaining this month</dt>
-          <dd id="remaining">RM 0.00</dd>
-          <dd id="remaining-hint" class="hint" hidden>worst case to best case</dd>
-        </div>
-        <div class="remaining" id="remaining-with-block" hidden>
-          <dt>Remaining this month, with scenarios</dt>
-          <dd id="remaining-with">RM 0.00</dd>
-        </div>
-      </dl>
-      <p id="tightest" class="tightest-note"></p>
-      <p id="tightest-with" class="tightest-note" hidden></p>
-    </section>
-
-    <section aria-labelledby="projection-heading">
-      <h2 id="projection-heading">Projection</h2>
-      <p class="muted">What remains each month, honouring start and end months. Costs paid every few months are spread evenly.</p>
-      <p class="muted" id="projection-empty" hidden>Enter your monthly income and add a commitment to see your projection.</p>
-      <div class="table-wrap" id="projection-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th scope="col">Month</th><th scope="col" id="projection-baseline-header">Remaining (worst case to best case)</th><th scope="col" id="projection-with-header" hidden>With scenarios</th></tr>
-          </thead>
-          <tbody id="projection-body"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section data-kind="commitments" aria-labelledby="commitments-heading">
-      <h2 id="commitments-heading">Commitments</h2>
-      <p class="muted">Fixed payments: rent, loans, insurance, subscriptions. Tick "scenario" on one you are only considering, then switch it on and off to see what it would do to the figures above.</p>
-      <ul class="items" data-role="list"></ul>
-      <p class="muted" data-role="empty" hidden>No commitments yet. Add your first one below.</p>
-
-      <form class="card" data-role="form" autocomplete="off">
-        <h3 data-role="form-heading">Add a commitment</h3>
-        <label class="field">
-          <span>Name</span>
-          <input name="name" type="text" required placeholder="e.g. Rent" autocomplete="off" data-limit="name">
+      <section class="overview" aria-label="Overview">
+        <label class="field income">
+          <span>Income (MYR)</span>
+          <input id="income" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
         </label>
-        <label class="field">
-          <span>Amount (MYR)</span>
-          <input name="amount" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
-        </label>
-        <label class="field">
-          <span>Paid</span>
-          <select name="cadence">
-            <option value="1">Every month</option>
-            <option value="12">Every year</option>
-            <option value="custom">Every N months…</option>
-          </select>
-        </label>
-        <label class="field" data-role="custom-field" hidden>
-          <span>Number of months between payments</span>
-          <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
-        </label>
-        <div class="pair">
-          <label class="field">
-            <span>Starts (optional)</span>
-            <input name="startMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Ends (optional)</span>
-            <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-          </label>
-        </div>
-        <label class="check">
-          <input name="scenario" type="checkbox">
-          <span>This is only a scenario: something I am considering, not yet real</span>
-        </label>
-        <div class="actions">
-          <button type="submit" data-role="submit">Add commitment</button>
-          <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
-        </div>
-      </form>
-    </section>
+        <dl class="stats" id="overview-stats">
+          <div class="stat hero remaining">
+            <dt id="remaining-label">Left</dt>
+            <dd id="remaining">RM 0.00</dd>
+            <dd id="remaining-hint" class="hint" hidden>worst – best</dd>
+          </div>
+          <div class="stat hero remaining" id="remaining-with-block" hidden>
+            <dt>With scenarios</dt>
+            <dd id="remaining-with">RM 0.00</dd>
+          </div>
+          <div class="stat">
+            <dt id="commitments-label">Commitments</dt>
+            <dd id="total-commitments">RM 0.00</dd>
+          </div>
+          <div class="stat">
+            <dt>Lifestyle</dt>
+            <dd id="total-lifestyle">RM 0.00</dd>
+          </div>
+        </dl>
+        <p id="tightest" class="note"></p>
+        <p id="tightest-with" class="note" hidden></p>
+      </section>
 
-    <section data-kind="lifestyle" aria-labelledby="lifestyle-heading">
-      <h2 id="lifestyle-heading">Lifestyle spending</h2>
-      <p class="muted">Things you could cut and that vary: food, fuel, eating out, a salon visit every few months. Enter a low and a high estimate.</p>
-      <ul class="items" data-role="list"></ul>
-      <p class="muted" data-role="empty" hidden>No lifestyle spending yet. Add your first one below.</p>
+      <details class="panel" data-panel="projection">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-trend"/></svg><span class="title">Projection</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body">
+          <p class="empty" id="projection-empty" hidden>Nothing yet</p>
+          <div class="table-wrap" id="projection-wrap">
+            <table class="data-table">
+              <thead>
+                <tr><th scope="col">Month</th><th scope="col" id="projection-baseline-header">Left</th><th scope="col" id="projection-with-header" hidden>With scenarios</th></tr>
+              </thead>
+              <tbody id="projection-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
 
-      <form class="card" data-role="form" autocomplete="off">
-        <h3 data-role="form-heading">Add lifestyle spending</h3>
-        <label class="field">
-          <span>Name</span>
-          <input name="name" type="text" required placeholder="e.g. Food" autocomplete="off" data-limit="name">
-        </label>
-        <div class="pair">
-          <label class="field">
-            <span>Low estimate (MYR)</span>
-            <input name="low" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
-          </label>
-          <label class="field">
-            <span>High estimate (MYR)</span>
-            <input name="high" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
-          </label>
+      <details class="panel" data-panel="commitments" open data-kind="commitments">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span class="title">Commitments</span><span class="count" data-role="count" hidden></span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body">
+          <ul class="items" data-role="list"></ul>
+          <p class="empty" data-role="empty" hidden>Nothing yet</p>
+          <details class="add" data-role="add">
+            <summary><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-role="form-heading">Add</span></summary>
+            <form data-role="form" autocomplete="off">
+              <label class="field">
+                <span>Name</span>
+                <input name="name" type="text" required autocomplete="off" data-limit="name">
+              </label>
+              <label class="field">
+                <span>Amount (MYR)</span>
+                <input name="amount" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+              </label>
+            <div class="pair">
+              <label class="field">
+                <span>Repeat</span>
+                <select name="cadence">
+                  <option value="1">Monthly</option>
+                  <option value="12">Yearly</option>
+                  <option value="custom">Every… months</option>
+                </select>
+              </label>
+              <label class="field" data-role="custom-field" hidden>
+                <span>Months</span>
+                <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
+              </label>
+            </div>
+            <div class="pair">
+              <label class="field">
+                <span>From</span>
+                <input name="startMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Until</span>
+                <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+              </label>
+            </div>
+            <label class="check">
+              <input name="scenario" type="checkbox">
+              <span>Scenario</span>
+            </label>
+              <div class="actions">
+                <button type="submit" data-role="submit">Save</button>
+                <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
+              </div>
+            </form>
+          </details>
         </div>
-        <label class="field">
-          <span>Paid</span>
-          <select name="cadence">
-            <option value="1">Every month</option>
-            <option value="12">Every year</option>
-            <option value="custom">Every N months…</option>
-          </select>
-        </label>
-        <label class="field" data-role="custom-field" hidden>
-          <span>Number of months between payments</span>
-          <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
-        </label>
-        <div class="pair">
-          <label class="field">
-            <span>Starts (optional)</span>
-            <input name="startMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Ends (optional)</span>
-            <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-          </label>
-        </div>
-        <div class="actions">
-          <button type="submit" data-role="submit">Add lifestyle spending</button>
-          <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
-        </div>
-      </form>
-    </section>
+      </details>
 
-    <section aria-labelledby="checkins-heading">
-      <h2 id="checkins-heading">Check-ins</h2>
-      <p class="muted">At the end of a month, enter what you actually spent on each lifestyle item. Each check-in keeps the estimate it was compared against, so changing an estimate later never rewrites past months.</p>
-      <p class="muted" id="checkin-no-lifestyle" hidden>Add some lifestyle spending first, then you can check in on it.</p>
-
-      <form class="card" id="checkin-form" autocomplete="off">
-        <h3>Check in</h3>
-        <div class="pair">
-          <label class="field">
-            <span>Month</span>
-            <input name="month" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Item</span>
-            <select name="item" required></select>
-          </label>
+      <details class="panel" data-panel="lifestyle" open data-kind="lifestyle">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-coffee"/></svg><span class="title">Lifestyle</span><span class="count" data-role="count" hidden></span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body">
+          <ul class="items" data-role="list"></ul>
+          <p class="empty" data-role="empty" hidden>Nothing yet</p>
+          <details class="add" data-role="add">
+            <summary><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-role="form-heading">Add</span></summary>
+            <form data-role="form" autocomplete="off">
+              <label class="field">
+                <span>Name</span>
+                <input name="name" type="text" required autocomplete="off" data-limit="name">
+              </label>
+              <div class="pair">
+                <label class="field">
+                  <span>Low (MYR)</span>
+                  <input name="low" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+                </label>
+                <label class="field">
+                  <span>High (MYR)</span>
+                  <input name="high" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+                </label>
+              </div>
+            <div class="pair">
+              <label class="field">
+                <span>Repeat</span>
+                <select name="cadence">
+                  <option value="1">Monthly</option>
+                  <option value="12">Yearly</option>
+                  <option value="custom">Every… months</option>
+                </select>
+              </label>
+              <label class="field" data-role="custom-field" hidden>
+                <span>Months</span>
+                <input name="customMonths" type="number" min="1" step="1" inputmode="numeric" value="3" data-limit="months">
+              </label>
+            </div>
+            <div class="pair">
+              <label class="field">
+                <span>From</span>
+                <input name="startMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Until</span>
+                <input name="endMonth" type="month" pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+              </label>
+            </div>
+              <div class="actions">
+                <button type="submit" data-role="submit">Save</button>
+                <button type="button" class="secondary" data-role="cancel" hidden>Cancel</button>
+              </div>
+            </form>
+          </details>
         </div>
-        <label class="field">
-          <span>Actually spent (MYR)</span>
-          <input name="actual" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off">
-        </label>
-        <p class="muted" id="checkin-hint"></p>
-        <div class="actions">
-          <button type="submit" id="checkin-submit">Save check-in</button>
-        </div>
-      </form>
+      </details>
 
-      <p class="muted" id="checkin-empty">No check-ins yet.</p>
-      <div class="table-wrap">
-        <table class="data-table" id="checkin-table" hidden>
-          <thead>
-            <tr><th scope="col">Month</th><th scope="col">Item</th><th scope="col">Estimate (per month)</th><th scope="col">Actually spent</th><th scope="col">Gap</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
-          </thead>
-          <tbody id="checkin-body"></tbody>
-        </table>
-      </div>
-    </section>
+      <details class="panel" data-panel="checkins">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span class="title">Check-ins</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body">
+          <p class="empty" id="checkin-no-lifestyle" hidden>Add lifestyle spending first</p>
+          <form id="checkin-form" autocomplete="off">
+            <div class="pair">
+              <label class="field">
+                <span>Month</span>
+                <input name="month" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Item</span>
+                <select name="item" required></select>
+              </label>
+            </div>
+            <label class="field">
+              <span>Spent (MYR)</span>
+              <input name="actual" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off">
+            </label>
+            <p class="hint" id="checkin-hint"></p>
+            <div class="actions">
+              <button type="submit" id="checkin-submit">Save</button>
+            </div>
+          </form>
+          <p class="empty" id="checkin-empty">Nothing yet</p>
+          <div class="table-wrap">
+            <table class="data-table" id="checkin-table" hidden>
+              <thead>
+                <tr><th scope="col">Month</th><th scope="col">Item</th><th scope="col">Estimate</th><th scope="col">Spent</th><th scope="col">Gap</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+              </thead>
+              <tbody id="checkin-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
 
     </div>
 
     <div id="page-houses" hidden>
-      <h1>Houses</h1>
-      <p class="muted">Keep track of each housing loan: what you owe, how much interest you pay, and what each month's installment is made of.</p>
-
-      <section class="summary" id="houses-overview" aria-labelledby="houses-overview-heading" hidden>
-        <h2 id="houses-overview-heading" class="visually-hidden">Overview of all houses</h2>
-        <dl class="figures">
-          <div class="remaining">
-            <dt>Installments due this month</dt>
+      <section class="overview" id="houses-overview" aria-label="Overview" hidden>
+        <dl class="stats">
+          <div class="stat hero">
+            <dt>Due this month</dt>
             <dd id="houses-total-monthly">RM 0.00</dd>
           </div>
-          <div>
-            <dt>Outstanding balance</dt>
+          <div class="stat">
+            <dt>Owed</dt>
             <dd id="houses-total-outstanding">RM 0.00</dd>
           </div>
-          <div>
-            <dt>Principal repaid so far</dt>
+          <div class="stat">
+            <dt>Principal paid</dt>
             <dd id="houses-total-principal">RM 0.00</dd>
           </div>
-          <div>
-            <dt>Interest paid so far</dt>
+          <div class="stat">
+            <dt>Interest paid</dt>
             <dd id="houses-total-interest-paid">RM 0.00</dd>
           </div>
-          <div>
-            <dt>Interest over the whole loans</dt>
+          <div class="stat">
+            <dt>Total interest</dt>
             <dd id="houses-total-interest">RM 0.00</dd>
           </div>
         </dl>
-        <p class="tightest-note">Installments due up to and including this month count as paid.</p>
       </section>
 
-      <section aria-labelledby="houses-heading">
-        <h2 id="houses-heading">Housing loans</h2>
-        <ul class="houses" id="house-list"></ul>
-        <p class="muted" id="house-empty" hidden>No houses yet. Add your first loan below.</p>
-
-        <form class="card" id="house-form" autocomplete="off">
-          <h3 id="house-form-heading">Add a house</h3>
-          <label class="field">
-            <span>Name</span>
-            <input name="name" type="text" required placeholder="e.g. Semenyih terrace" autocomplete="off" data-limit="name">
-          </label>
-          <div class="pair">
-            <label class="field">
-              <span>Property price (optional, MYR)</span>
-              <input name="price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
-            </label>
-            <label class="field">
-              <span>Loan amount (MYR)</span>
-              <input name="loan" type="number" required min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
-            </label>
-          </div>
-          <div class="pair">
-            <label class="field">
-              <span>Interest rate (% a year)</span>
-              <input name="ratePercent" type="number" required min="0" max="100" step="0.01" inputmode="decimal" placeholder="4.00" autocomplete="off">
-            </label>
-            <label class="field">
-              <span>Loan term (years)</span>
-              <input name="years" type="number" required min="0.1" step="any" inputmode="decimal" placeholder="30" autocomplete="off">
-            </label>
-          </div>
-          <label class="field">
-            <span>First installment month</span>
-            <input name="startMonth" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Bank's monthly installment (optional, MYR)</span>
-            <input name="installment" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Leave empty to calculate it" autocomplete="off" data-limit="amount">
-          </label>
-          <p class="muted" id="house-hint"></p>
-          <div class="actions">
-            <button type="submit" id="house-submit">Add house</button>
-            <button type="button" class="secondary" id="house-cancel" hidden>Cancel</button>
-          </div>
-        </form>
-      </section>
+      <div class="houses" id="house-list"></div>
+      <p class="empty" id="house-empty" hidden>No houses yet</p>
+          <details class="add" id="house-add">
+            <summary><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span id="house-form-heading">Add house</span></summary>
+            <form id="house-form" autocomplete="off">
+              <label class="field">
+                <span>Name</span>
+                <input name="name" type="text" required autocomplete="off" data-limit="name">
+              </label>
+              <div class="pair">
+                <label class="field">
+                  <span>Price (MYR)</span>
+                  <input name="price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="optional" autocomplete="off" data-limit="amount">
+                </label>
+                <label class="field">
+                  <span>Loan (MYR)</span>
+                  <input name="loan" type="number" required min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off" data-limit="amount">
+                </label>
+              </div>
+              <div class="pair">
+                <label class="field">
+                  <span>Rate (% a year)</span>
+                  <input name="ratePercent" type="number" required min="0" max="100" step="0.01" inputmode="decimal" placeholder="4.00" autocomplete="off">
+                </label>
+                <label class="field">
+                  <span>Years</span>
+                  <input name="years" type="number" required min="0.1" step="any" inputmode="decimal" placeholder="30" autocomplete="off">
+                </label>
+              </div>
+              <div class="pair">
+                <label class="field">
+                  <span>First installment</span>
+                  <input name="startMonth" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
+                </label>
+                <label class="field">
+                  <span>Bank installment (MYR)</span>
+                  <input name="installment" type="number" min="0" step="0.01" inputmode="decimal" placeholder="optional" autocomplete="off" data-limit="amount">
+                </label>
+              </div>
+              <p class="hint" id="house-hint"></p>
+              <div class="actions">
+                <button type="submit" id="house-submit">Save</button>
+                <button type="button" class="secondary" id="house-cancel" hidden>Cancel</button>
+              </div>
+            </form>
+          </details>
     </div>
 
-    <section aria-labelledby="backup-heading">
-      <h2 id="backup-heading">Backup</h2>
-      <p class="muted">Your data lives only in this browser. Export a file to keep a copy or move it to another device. Never commit the file to a public repository.</p>
-      <div class="actions">
-        <button type="button" id="export-button" class="secondary">Export backup</button>
-        <button type="button" id="import-button" class="secondary">Import backup…</button>
-        <input id="import-file" type="file" accept="application/json,.json" autocomplete="off" hidden>
-      </div>
-      <p id="backup-message" class="muted" role="status"></p>
-    </section>
+      <details class="panel" data-panel="backup">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span class="title">Backup</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body">
+          <div class="actions">
+            <button type="button" id="export-button" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export</button>
+            <button type="button" id="import-button" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Import</button>
+            <input id="import-file" type="file" accept="application/json,.json" autocomplete="off" hidden>
+          </div>
+          <p id="backup-message" class="hint" role="status"></p>
+        </div>
+      </details>
+
   </main>
 
   <script type="module" src="app.js"></script>

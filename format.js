@@ -16,15 +16,17 @@ export const currentMonth = () => {
 };
 
 export const cadenceLabel = (everyMonths) => {
-  if (everyMonths === 1) return "every month";
-  if (everyMonths === 12) return "every year";
+  if (everyMonths === 1) return "monthly";
+  if (everyMonths === 12) return "yearly";
   return `every ${everyMonths} months`;
 };
 
-export const periodLabel = ({ startMonth, endMonth }) =>
-  [startMonth && `from ${monthLabel(startMonth)}`, endMonth && `until ${monthLabel(endMonth)}`]
-    .filter(Boolean)
-    .join(" ");
+export const periodLabel = ({ startMonth, endMonth }) => {
+  if (startMonth && endMonth) return `${monthLabel(startMonth)} – ${monthLabel(endMonth)}`;
+  if (startMonth) return `from ${monthLabel(startMonth)}`;
+  if (endMonth) return `until ${monthLabel(endMonth)}`;
+  return "";
+};
 
 export const termLabel = (months) => {
   const years = Math.floor(months / 12);

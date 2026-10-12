@@ -8,15 +8,9 @@ import {
   isMonth,
   isValidHouse,
 } from "./rules.js";
+import { el, icon, iconButton } from "./ui.js";
 
 const byId = (id) => document.getElementById(id);
-
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 function figure(label, value) {
   const box = el("div");
@@ -24,15 +18,16 @@ function figure(label, value) {
   return box;
 }
 
-const STATUS_LABEL = {
-  upcoming: (house) => `Starts ${monthLabel(house.startMonth)}`,
-  active: () => "Active",
-  "paid off": () => "Paid off",
+const STATUS = {
+  upcoming: { label: (house) => `Starts ${monthLabel(house.startMonth)}`, className: "" },
+  active: { label: () => "Active", className: "active" },
+  "paid off": { label: () => "Paid off", className: "done" },
 };
 
 export function setupHouses({ getState, commit, newId }) {
   const form = byId("house-form");
   const field = (name) => form.elements.namedItem(name);
+  const addPanel = byId("house-add");
   const heading = byId("house-form-heading");
   const submit = byId("house-submit");
   const cancel = byId("house-cancel");
@@ -41,8 +36,8 @@ export function setupHouses({ getState, commit, newId }) {
   const emptyMessage = byId("house-empty");
   const overview = byId("houses-overview");
   const addHeading = heading.textContent;
-  const addLabel = submit.textContent;
   let editingId = null;
+  const openHouses = new Set();
   const openSchedules = new Set();
 
   for (const input of form.querySelectorAll('[data-limit="amount"]')) input.max = MAX_AMOUNT;
@@ -76,20 +71,21 @@ export function setupHouses({ getState, commit, newId }) {
       item.loan > 0 && Number.isFinite(item.ratePercent) && item.ratePercent >= 0 &&
       item.termMonths >= 1 && item.termMonths <= MAX_TERM_MONTHS;
     if (usable) {
-      parts.push(`Calculated installment: ${money.format(monthlyInstallment(item))} a month.`);
+      parts.push(`${money.format(monthlyInstallment(item))} /mo`);
     }
     if (item.price !== undefined && item.loan > 0 && item.price >= item.loan) {
-      parts.push(`Down payment: ${money.format(item.price - item.loan)}.`);
+      parts.push(`down ${money.format(item.price - item.loan)}`);
     }
     hint.textContent = parts.join(" ");
   }
 
   function reset() {
+    // Finishing an edit folds the form away; adding keeps it open for the next house.
+    if (editingId !== null) addPanel.open = false;
     editingId = null;
     form.reset();
     clearValidity();
     heading.textContent = addHeading;
-    submit.textContent = addLabel;
     cancel.hidden = true;
     updateHint();
   }
@@ -106,8 +102,8 @@ export function setupHouses({ getState, commit, newId }) {
     field("startMonth").value = house.startMonth;
     field("installment").value = house.installment ?? "";
     heading.textContent = "Edit house";
-    submit.textContent = "Save changes";
     cancel.hidden = false;
+    addPanel.open = true;
     clearValidity();
     updateHint();
     field("name").focus();
@@ -117,6 +113,7 @@ export function setupHouses({ getState, commit, newId }) {
     const house = find(id);
     if (!house || !confirm(`Delete "${house.name}"?`)) return;
     if (editingId === id) reset();
+    openHouses.delete(id);
     openSchedules.delete(id);
     commit({ ...getState(), houses: getState().houses.filter((other) => other.id !== id) });
   }
@@ -124,7 +121,7 @@ export function setupHouses({ getState, commit, newId }) {
   function scheduleTable(summary) {
     const table = el("table", "data-table");
     const head = el("tr");
-    for (const label of ["No.", "Month", "Installment", "Interest", "Principal", "Balance"]) {
+    for (const label of ["#", "Month", "Paid", "Interest", "Principal", "Balance"]) {
       const cell = el("th", "", label);
       cell.scope = "col";
       head.append(cell);
@@ -140,7 +137,7 @@ export function setupHouses({ getState, commit, newId }) {
       if (row.month === now) tr.className = "current";
       const month = el("th", "", monthLabel(row.month));
       month.scope = "row";
-      if (row.month === now) month.append(" ", el("span", "badge", "This month"));
+      if (row.month === now) month.append(" ", el("span", "chip active", "Now"));
       tr.append(
         el("td", "", String(row.number)),
         month,
@@ -159,63 +156,75 @@ export function setupHouses({ getState, commit, newId }) {
 
   function buildCard(house) {
     const summary = loanSummary(house, currentMonth());
-    const card = el("li", "house");
+    const status = STATUS[summary.status];
+    const card = el("details", "panel");
     card.dataset.id = house.id;
+    card.open = openHouses.has(house.id);
+    card.addEventListener("toggle", () => {
+      if (card.open) openHouses.add(house.id);
+      else openHouses.delete(house.id);
+    });
 
-    const top = el("div", "house-head");
-    const name = el("h3", "", house.name);
-    top.append(name, el("span", "badge", STATUS_LABEL[summary.status](house)));
-
-    const detail = [
-      `Loan ${money.format(house.loan)}`,
-      `${house.ratePercent}% a year`,
-      termLabel(house.termMonths),
-      `first installment ${monthLabel(house.startMonth)}`,
-    ];
-    if (house.price !== undefined) {
-      detail.unshift(`Price ${money.format(house.price)}`, `down payment ${money.format(house.price - house.loan)}`);
-    }
-    const detailLine = el("div", "item-detail", detail.join(" · "));
-
-    const figures = el("dl", "figures house-figures");
-    figures.append(
-      figure(house.installment !== undefined ? "Monthly installment (from bank)" : "Monthly installment", money.format(summary.installment)),
-      figure("Outstanding balance", money.format(summary.outstanding)),
-      figure("Principal repaid", money.format(summary.principalPaid)),
-      figure("Interest paid so far", money.format(summary.interestPaid)),
-      figure("Interest over the whole loan", money.format(summary.totalInterest)),
-      figure("Total payable", money.format(summary.totalPayable)),
-      figure("Payments made", `${summary.paymentsMade} of ${summary.paymentsTotal}`),
-      figure("Final payment", monthLabel(summary.finalMonth)),
+    const head = el("summary");
+    head.append(
+      icon("home"),
+      el("span", "title", house.name),
+      ...(summary.status === "active" ? [] : [el("span", `chip ${status.className}`.trim(), status.label(house))]),
+      el("span", "amount", money.format(summary.installment)),
+      icon("chevron", "chev"),
     );
+
+    const stats = el("dl", "stats");
+    const stat = (label, value) => {
+      const box = el("div", "stat");
+      box.append(el("dt", "", label), el("dd", "", value));
+      stats.append(box);
+    };
+    if (house.price !== undefined) {
+      stat("Price", money.format(house.price));
+      stat("Down payment", money.format(house.price - house.loan));
+    }
+    stat("Loan", money.format(house.loan));
+    stat("Owed", money.format(summary.outstanding));
+    stat("Principal paid", money.format(summary.principalPaid));
+    stat("Interest paid", money.format(summary.interestPaid));
+    stat("Total interest", money.format(summary.totalInterest));
+    stat("Total payable", money.format(summary.totalPayable));
+    stat("Payments", `${summary.paymentsMade} / ${summary.paymentsTotal}`);
+    stat("Ends", monthLabel(summary.finalMonth));
 
     const percent = Math.round(summary.progress * 1000) / 10;
     const progress = el("progress");
     progress.max = 100;
     progress.value = percent;
-    progress.setAttribute("aria-label", `${house.name}: ${percent}% of the loan repaid`);
-    const progressText = el("div", "item-detail", `${percent}% of the loan repaid`);
+    progress.setAttribute("aria-label", `${house.name}: ${percent}% repaid`);
 
+    const meta = el("div", "house-meta");
+    const terms = [`${house.ratePercent}%`, termLabel(house.termMonths), `from ${monthLabel(house.startMonth)}`];
+    if (house.installment !== undefined) terms.push("bank installment");
+    meta.append(
+      el("span", "muted", `${percent}% repaid · ${terms.join(" · ")}`),
+    );
     const actions = el("div", "actions");
-    const edit = el("button", "secondary", "Edit");
-    edit.type = "button";
-    edit.setAttribute("aria-label", `Edit ${house.name}`);
-    edit.addEventListener("click", () => startEdit(house.id));
-    const del = el("button", "danger", "Delete");
-    del.type = "button";
-    del.setAttribute("aria-label", `Delete ${house.name}`);
-    del.addEventListener("click", () => remove(house.id));
-    actions.append(edit, del);
+    actions.append(
+      iconButton({ name: "edit", label: `Edit ${house.name}`, onClick: () => startEdit(house.id) }),
+      iconButton({ name: "trash", label: `Delete ${house.name}`, className: "danger", onClick: () => remove(house.id) }),
+    );
+    meta.append(actions);
 
-    const schedule = el("details", "schedule");
-    schedule.append(el("summary", "", "Monthly schedule"), scheduleTable(summary));
+    const schedule = el("details", "sub");
+    const scheduleHead = el("summary");
+    scheduleHead.append(icon("table"), "Schedule");
+    schedule.append(scheduleHead, scheduleTable(summary));
     schedule.open = openSchedules.has(house.id);
     schedule.addEventListener("toggle", () => {
       if (schedule.open) openSchedules.add(house.id);
       else openSchedules.delete(house.id);
     });
 
-    card.append(top, detailLine, figures, progress, progressText, actions, schedule);
+    const body = el("div", "panel-body");
+    body.append(stats, progress, meta, schedule);
+    card.append(head, body);
     return card;
   }
 
@@ -239,7 +248,10 @@ export function setupHouses({ getState, commit, newId }) {
     clearValidity();
     updateHint();
   });
-  cancel.addEventListener("click", reset);
+  cancel.addEventListener("click", () => {
+    reset();
+    addPanel.open = false;
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -277,6 +289,7 @@ export function setupHouses({ getState, commit, newId }) {
       return;
     }
     reset();
+    openHouses.add(item.id);
     commit({ ...getState(), houses: next });
     field("name").focus();
   });

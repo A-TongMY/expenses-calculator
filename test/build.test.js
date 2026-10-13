@@ -11,6 +11,8 @@ test("publishes only the browser asset allowlist", async (t) => {
   const filesModule = await import("../public-files.js").catch(() => null);
   assert.ok(filesModule, "public-files.js must exist");
   const { PUBLIC_FILES } = filesModule;
+  assert.ok(PUBLIC_FILES.includes("bootstrap.js"));
+  assert.ok(PUBLIC_FILES.includes("persistence.js"));
 
   const root = await mkdtemp(join(tmpdir(), "expenses-source-"));
   const output = join(root, "dist");

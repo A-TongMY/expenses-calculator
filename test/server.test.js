@@ -43,6 +43,8 @@ const publicFiles = {
   "/charts.js": /^text\/javascript/,
   "/reports.js": /^text\/javascript/,
   "/home.js": /^text\/javascript/,
+  "/bootstrap.js": /^text\/javascript/,
+  "/persistence.js": /^text\/javascript/,
   "/styles.css": /^text\/css/,
 };
 
@@ -56,6 +58,7 @@ for (const [path, contentType] of Object.entries(publicFiles)) {
 
 const privatePaths = [
   "/server.js",
+  "/netlify/functions/state.js",
   "/package.json",
   "/GLOSSARY.md",
   "/test/calc.test.js",

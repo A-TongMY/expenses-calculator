@@ -2,6 +2,7 @@ export const PUBLIC_FILES = Object.freeze([
   "index.html",
   "styles.css",
   "app.js",
+  "bootstrap.js",
   "calc.js",
   "backup.js",
   "rules.js",
@@ -13,5 +14,6 @@ export const PUBLIC_FILES = Object.freeze([
   "ui.js",
   "charts.js",
   "reports.js",
+  "persistence.js",
   "home.js",
 ]);

@@ -60,6 +60,17 @@ Home gains a Spending section with the same metrics and category chart for the
 current month across all categories, and a link to Spending. The chart and summary
 share one data calculation with the Spending page.
 
+### UX and visual style
+
+Keep the existing simple visual language: compact cards, clear spacing, short
+labels, and no explanatory walls of text. Use existing sprite icons for actions
+where their meaning is clear, especially edit, delete, add, and navigation.
+Icon-only controls require accessible names and tooltips; field labels, totals,
+validation errors, and destructive confirmations must remain understandable.
+Preserve keyboard interaction, focus recovery after edits, readable empty states,
+and responsive mobile layouts. The interface should communicate through its
+structure and state rather than verbose instructions.
+
 ## Entry workflow and validation
 
 Persist each entry as `{ id, date, categoryId, amount, description }`.

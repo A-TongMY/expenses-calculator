@@ -7,8 +7,14 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
   let inFlight = null;
   let pausedError = null;
   let stopped = false;
+  let savingAnnounced = false;
 
   const notify = (status) => onStatus(status);
+  const announceSaving = () => {
+    if (savingAnnounced) return;
+    savingAnnounced = true;
+    notify("saving");
+  };
   const cancelTimer = () => {
     if (timer !== null) clearTimeout(timer);
     timer = null;
@@ -35,7 +41,7 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
 
     const snapshot = pending;
     pending = null;
-    notify("saving");
+    announceSaving();
     const operation = Promise.resolve()
       .then(() => save(snapshot, currentEtag))
       .then((nextEtag) => {
@@ -43,12 +49,16 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
           throw new TypeError("A successful save must return an ETag.");
         }
         currentEtag = nextEtag;
-        if (!stopped) notify("saved");
+        if (pending === null) {
+          savingAnnounced = false;
+          if (!stopped) notify("saved");
+        }
         return currentEtag;
       })
       .catch((error) => {
         pending ??= snapshot;
         pausedError = error;
+        savingAnnounced = false;
         if (!stopped) {
           notify(error instanceof StorageConflictError ? "conflict" : "error");
         }
@@ -67,7 +77,10 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
     enqueue(state) {
       if (stopped) throw new Error("The save queue is stopped.");
       pending = structuredClone(state);
-      if (!pausedError) schedule();
+      if (!pausedError) {
+        announceSaving();
+        schedule();
+      }
     },
 
     flush,
@@ -78,6 +91,7 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
       pending = null;
       pausedError = null;
       stopped = false;
+      savingAnnounced = false;
       currentEtag = remoteEtag;
     },
 
@@ -85,6 +99,7 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
       cancelTimer();
       pending = null;
       stopped = true;
+      savingAnnounced = false;
     },
   };
 }

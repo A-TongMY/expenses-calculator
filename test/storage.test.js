@@ -121,6 +121,20 @@ test("saveState sends the validated backup and propagates its ETag", async () =>
   assert.deepEqual(JSON.parse(request.options.body), { backup: validBackup });
 });
 
+test("saveState creates the first remote state conditionally when no ETag exists", async () => {
+  let request;
+  const client = createStorageClient({
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return responseJson({ ok: true }, 200, { etag: '"v1"' });
+    },
+    storage: memoryStorage(),
+  });
+
+  assert.equal(await client.saveState(validState, null), '"v1"');
+  assert.equal(request.options.headers["If-None-Match"], "*");
+});
+
 test("migration creates state conditionally and returns its ETag", async () => {
   let request;
   const client = createStorageClient({

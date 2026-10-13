@@ -1,8 +1,10 @@
 import { lifestyleMonthlyCost, monthlyCost, projection, tightestMonth } from "./calc.js";
 import { importBackup, exportBackup } from "./backup.js";
+import { initializeState } from "./bootstrap.js";
 import { setupCheckIns } from "./checkins.js";
 import { setupHome } from "./home.js";
 import { setupHouses } from "./houses.js";
+import { createSaveQueue } from "./persistence.js";
 import { cadenceLabel, currentMonth, money, monthLabel, periodLabel, range } from "./format.js";
 import {
   MAX_AMOUNT,
@@ -13,13 +15,37 @@ import {
   isValidCommitment,
   isValidLifestyle,
 } from "./rules.js";
-import { STORAGE_KEY, loadState, saveState } from "./storage.js";
+import {
+  AuthRequiredError,
+  StorageConflictError,
+  StorageError,
+  createStorageClient,
+} from "./storage.js";
 import { el, iconButton, rememberPanels } from "./ui.js";
 
 const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
 const $ = (id) => document.getElementById(id);
 const els = {
+  startupPanel: $("startup-panel"),
+  startupMessage: $("startup-message"),
+  retryStartup: $("retry-startup"),
+  authPanel: $("auth-panel"),
+  authMessage: $("auth-message"),
+  authExportButton: $("auth-export-button"),
+  migrationPanel: $("migration-panel"),
+  migrationAccept: $("migration-accept"),
+  migrationDecline: $("migration-decline"),
+  migrationMessage: $("migration-message"),
+  signedInShell: $("signed-in-shell"),
+  saveStatus: $("save-status"),
+  logoutButton: $("logout-button"),
+  conflictPanel: $("conflict-panel"),
+  reloadRemoteButton: $("reload-remote-button"),
+  exportUnsavedButton: $("export-unsaved-button"),
+  saveRecovery: $("save-recovery"),
+  saveRecoveryMessage: $("save-recovery-message"),
+  retrySaveButton: $("retry-save-button"),
   notice: $("storage-notice"),
   income: $("income"),
   figures: $("overview-stats"),
@@ -60,22 +86,81 @@ function showNotice(message) {
   els.notice.hidden = false;
 }
 
-const loaded = loadState();
-let state = loaded.state;
-if (loaded.notice) showNotice(loaded.notice);
-const startupNotice = loaded.notice ?? null;
+const storage = createStorageClient();
+let state = { income: 0, commitments: [], lifestyle: [], checkIns: [], houses: [] };
+let etag = null;
+let saveQueue = null;
+let startupNotice = null;
+let hasUnsavedChanges = false;
+let appReady = false;
 
-let saveFailed = false;
+function showSignIn(message) {
+  appReady = false;
+  els.signedInShell.hidden = true;
+  els.startupPanel.hidden = true;
+  els.migrationPanel.hidden = true;
+  els.authPanel.hidden = false;
+  els.authMessage.textContent = message;
+  els.authExportButton.hidden = !hasUnsavedChanges;
+}
 
-function persist() {
-  const saved = saveState(state);
-  if (saved && saveFailed) {
+function showStartupFailure() {
+  appReady = false;
+  els.signedInShell.hidden = true;
+  els.authPanel.hidden = true;
+  els.migrationPanel.hidden = true;
+  els.startupPanel.hidden = false;
+  els.startupMessage.textContent =
+    "Could not connect to your remote account. Your data was not replaced. Check your connection and try again.";
+  els.retryStartup.hidden = false;
+}
+
+function updateSaveStatus(status) {
+  if (status === "saving") {
+    els.saveStatus.textContent = "Saving…";
+    els.saveRecovery.hidden = true;
+    return;
+  }
+  if (status === "saved") {
+    hasUnsavedChanges = false;
+    els.saveStatus.textContent = "Saved";
+    els.saveRecovery.hidden = true;
+    els.conflictPanel.hidden = true;
     if (startupNotice) showNotice(startupNotice);
     else els.notice.hidden = true;
+    return;
   }
-  if (!saved) showNotice("Could not save to this browser. Use Export backup to keep your data.");
-  saveFailed = !saved;
-  return saved;
+  hasUnsavedChanges = true;
+  if (status === "conflict") {
+    els.saveStatus.textContent = "Conflict";
+    els.conflictPanel.hidden = false;
+    els.saveRecovery.hidden = true;
+    return;
+  }
+  els.saveStatus.textContent = "Not saved";
+  els.saveRecoveryMessage.textContent =
+    "Your changes are still in this tab, but have not been saved to your account. Export a backup or retry.";
+  els.saveRecovery.hidden = false;
+}
+
+async function saveRemoteState(nextState, currentEtag) {
+  try {
+    const nextEtag = await storage.saveState(nextState, currentEtag);
+    etag = nextEtag;
+    return nextEtag;
+  } catch (error) {
+    if (error instanceof AuthRequiredError) {
+      showSignIn("Your session expired. Sign in again to continue; unsaved changes remain available to export.");
+    }
+    throw error;
+  }
+}
+
+function persist() {
+  if (!saveQueue) return false;
+  hasUnsavedChanges = true;
+  saveQueue.enqueue(state);
+  return true;
 }
 
 function commit(next) {
@@ -412,11 +497,76 @@ function showBackupMessage(message) {
   els.backupMessage.textContent = message;
 }
 
-syncIncomeField();
+function requestMigrationConfirmation() {
+  return new Promise((resolve) => {
+    els.startupPanel.hidden = true;
+    els.migrationMessage.textContent =
+      "A valid expense backup was found in this browser. Migrate a copy to your private account? The original browser data will remain unchanged.";
+    els.migrationPanel.hidden = false;
+    const finish = (accepted) => {
+      els.migrationPanel.hidden = true;
+      els.migrationAccept.onclick = null;
+      els.migrationDecline.onclick = null;
+      resolve(accepted);
+    };
+    els.migrationAccept.onclick = () => finish(true);
+    els.migrationDecline.onclick = () => finish(false);
+    els.migrationAccept.focus();
+  });
+}
+
+async function initializeApp() {
+  els.retryStartup.disabled = true;
+  els.retryStartup.hidden = true;
+  els.startupPanel.hidden = false;
+  els.authPanel.hidden = true;
+  els.migrationPanel.hidden = true;
+  els.signedInShell.hidden = true;
+  els.startupMessage.textContent = "Checking your saved expense data…";
+  try {
+    const initialized = await initializeState({
+      storage,
+      confirmMigration: requestMigrationConfirmation,
+    });
+    state = initialized.state;
+    etag = initialized.etag;
+    startupNotice = initialized.notice;
+    els.saveStatus.textContent = etag === null ? "Ready" : "Saved";
+    saveQueue = createSaveQueue({
+      save: saveRemoteState,
+      etag,
+      onStatus: updateSaveStatus,
+      delay: 300,
+    });
+    if (startupNotice) showNotice(startupNotice);
+    els.startupPanel.hidden = true;
+    els.authPanel.hidden = true;
+    els.migrationPanel.hidden = true;
+    els.signedInShell.hidden = false;
+    appReady = true;
+    syncIncomeField();
+    renderAll();
+    showPage();
+  } catch (error) {
+    if (error instanceof AuthRequiredError) {
+      showSignIn("Sign in with the allowed GitHub account to access your private expense data.");
+    } else if (error instanceof StorageError) {
+      appReady = false;
+      showStartupFailure();
+    } else {
+      appReady = false;
+      console.error(error);
+      showStartupFailure();
+    }
+  } finally {
+    els.retryStartup.disabled = false;
+  }
+}
 
 const PAGES = ["home", "expenses", "houses"];
 
 function showPage() {
+  if (!appReady) return;
   const requested = location.hash.replace(/^#\/?/, "");
   const page = PAGES.includes(requested) ? requested : "home";
   for (const name of PAGES) {
@@ -429,8 +579,8 @@ function showPage() {
   if (page === "home") home.render();
 }
 
-showPage();
 window.addEventListener("hashchange", () => {
+  if (!appReady) return;
   showPage();
   window.scrollTo(0, 0);
 });
@@ -446,28 +596,14 @@ els.income.addEventListener("input", () => {
 els.income.addEventListener("change", syncIncomeField);
 
 function refreshIfMonthChanged() {
-  if (!document.hidden && currentMonth() !== shownMonth) renderAll();
+  if (appReady && !document.hidden && currentMonth() !== shownMonth) renderAll();
 }
 
 document.addEventListener("visibilitychange", refreshIfMonthChanged);
 // A tab left open and visible across midnight on the 1st never fires visibilitychange.
 setInterval(refreshIfMonthChanged, 60_000);
 
-// Another tab saved: take its data instead of overwriting it with this tab's older copy.
-window.addEventListener("storage", (event) => {
-  if (event.key !== STORAGE_KEY || event.newValue === null) return;
-  let incoming;
-  try {
-    incoming = importBackup(event.newValue);
-  } catch {
-    return; // An unreadable value is left for the tab that wrote it to report.
-  }
-  state = incoming;
-  syncIncomeField();
-  renderAll();
-});
-
-els.exportButton.addEventListener("click", () => {
+function exportCurrentState() {
   const blob = new Blob([exportBackup(state)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -476,7 +612,112 @@ els.exportButton.addEventListener("click", () => {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showBackupMessage("Downloaded. Keep the file private.");
-});
+  if (!els.authPanel.hidden) {
+    els.authMessage.textContent = "Your backup was downloaded. Keep the file private.";
+  }
+}
+
+async function retrySave() {
+  els.retrySaveButton.disabled = true;
+  try {
+    const remote = await storage.loadState();
+    if (remote.status === "loaded") {
+      if (etag === null || remote.etag !== etag) {
+        updateSaveStatus("conflict");
+        return;
+      }
+      saveQueue.reset(remote.etag);
+      etag = remote.etag;
+    } else if (remote.status === "empty" && etag === null) {
+      saveQueue.reset(null);
+    } else {
+      throw new StorageError("The remote state changed and could not be retried safely.");
+    }
+    saveQueue.enqueue(state);
+    await saveQueue.flush();
+  } catch (error) {
+    if (error instanceof AuthRequiredError) {
+      showSignIn("Your session expired. Sign in again; unsaved changes remain available to export.");
+    } else if (error instanceof StorageConflictError) {
+      return;
+    } else {
+      els.saveRecoveryMessage.textContent =
+        "The save still has not completed. Your edits remain in this tab and can be exported.";
+      els.saveRecovery.hidden = false;
+    }
+  } finally {
+    els.retrySaveButton.disabled = false;
+  }
+}
+
+async function reloadRemoteVersion() {
+  if (!confirm("Load the remote version? This replaces the current edits in this tab. Export them first if you need a copy.")) {
+    return;
+  }
+  els.reloadRemoteButton.disabled = true;
+  try {
+    const remote = await storage.loadState();
+    if (remote.status !== "loaded") {
+      throw new StorageError("The remote version is no longer available.");
+    }
+    state = remote.state;
+    etag = remote.etag;
+    saveQueue.reset(etag);
+    hasUnsavedChanges = false;
+    syncIncomeField();
+    renderAll();
+    updateSaveStatus("saved");
+  } catch (error) {
+    if (error instanceof AuthRequiredError) {
+      showSignIn("Your session expired. Sign in again; unsaved changes remain available to export.");
+    } else {
+      els.saveRecoveryMessage.textContent =
+        "The remote version could not be loaded. Your current edits are still available to export.";
+      els.saveRecovery.hidden = false;
+    }
+  } finally {
+    els.reloadRemoteButton.disabled = false;
+  }
+}
+
+async function signOut() {
+  try {
+    await saveQueue.flush();
+  } catch (error) {
+    if (
+      !(error instanceof AuthRequiredError) &&
+      !confirm("Some edits are not saved. Sign out anyway? Export a backup first if you need those edits.")
+    ) {
+      return;
+    }
+  }
+  els.logoutButton.disabled = true;
+  try {
+    const response = await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new StorageError("The sign-out request failed.", response.status);
+    saveQueue.stop();
+    showSignIn(
+      hasUnsavedChanges
+        ? "You have signed out. Unsaved edits remain in this tab and can be exported."
+        : "You have signed out. Sign in with the allowed GitHub account to continue.",
+    );
+  } catch {
+    showNotice("Could not sign out. Check your connection and try again.");
+  } finally {
+    els.logoutButton.disabled = false;
+  }
+}
+
+els.retryStartup.addEventListener("click", () => void initializeApp());
+els.retrySaveButton.addEventListener("click", () => void retrySave());
+els.reloadRemoteButton.addEventListener("click", () => void reloadRemoteVersion());
+els.exportUnsavedButton.addEventListener("click", exportCurrentState);
+els.authExportButton.addEventListener("click", exportCurrentState);
+els.exportButton.addEventListener("click", exportCurrentState);
+els.logoutButton.addEventListener("click", () => void signOut());
 
 els.importButton.addEventListener("click", () => els.importFile.click());
 
@@ -488,25 +729,30 @@ els.importFile.addEventListener("change", async () => {
     showBackupMessage("File too large.");
     return;
   }
+  let imported;
   try {
-    const imported = importBackup(await file.text());
-    if (!confirm("Importing replaces everything currently saved in this browser. Continue?")) {
-      showBackupMessage("Cancelled.");
-      return;
-    }
-    state = imported;
-    const saved = persist();
-    syncIncomeField();
-    for (const section of sections) section.reset();
-    houses.reset();
-    renderAll();
-    checkIns.syncForm();
-    showBackupMessage(
-      saved ? "Imported." : "Imported, but not saved in this browser.",
-    );
+    imported = importBackup(await file.text());
   } catch (error) {
     showBackupMessage(error.message);
+    return;
+  }
+  if (!confirm("Importing replaces the expense data in your account. Continue?")) {
+    showBackupMessage("Cancelled.");
+    return;
+  }
+  state = imported;
+  persist();
+  syncIncomeField();
+  for (const section of sections) section.reset();
+  houses.reset();
+  renderAll();
+  checkIns.syncForm();
+  try {
+    await saveQueue.flush();
+    showBackupMessage("Imported and saved to your account.");
+  } catch {
+    showBackupMessage("Imported in this tab, but not saved. Export a backup to keep your changes.");
   }
 });
 
-renderAll();
+void initializeApp();

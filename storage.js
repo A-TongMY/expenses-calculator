@@ -103,11 +103,16 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
     },
 
     async saveState(state, etag) {
-      if (typeof etag !== "string" || !etag) {
-        throw new StorageError("A remote state version is required before saving.");
+      if (etag !== null && etag !== undefined && (typeof etag !== "string" || !etag)) {
+        throw new StorageError("The remote state version is invalid.");
       }
       const { backup } = validatedBackup(state);
-      return writeBackup(backup, { "If-Match": etag });
+      const condition =
+        etag === null || etag === undefined ? { "If-None-Match": "*" } : { "If-Match": etag };
+      return writeBackup(
+        backup,
+        condition,
+      );
     },
 
     loadLegacyState() {

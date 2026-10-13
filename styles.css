@@ -44,6 +44,22 @@ body {
 
 main { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 4rem; }
 
+.access-main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
+.access-panel {
+  margin: 8vh auto 0; padding: 1.25rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.access-panel h1 { margin: 0 0 0.6rem; font-size: 1.35rem; }
+.access-panel p { color: var(--muted); }
+.access-panel .actions { margin-top: 1rem; }
+.button-link {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  padding: 0.55rem 1rem; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent); color: var(--accent-text); cursor: pointer; font-weight: 600;
+  text-decoration: none;
+}
+.button-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap;
@@ -68,6 +84,18 @@ main { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 4rem; }
 }
 .topbar-inner a:hover { color: var(--text); }
 .topbar-inner a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.account-controls {
+  display: flex; align-items: center; gap: 0.55rem; margin-left: auto;
+  color: var(--muted); font-size: 0.8rem; white-space: nowrap;
+}
+.account-controls button { padding: 0.35rem 0.65rem; font-size: 0.8rem; }
+@media (max-width: 44rem) {
+  .topbar-inner { flex-wrap: wrap; }
+  .account-controls { flex: 1 0 100%; justify-content: flex-end; margin-left: 0; }
+}
+.conflict-panel p { margin-top: 0; }
+.save-recovery { margin: 0 0 1rem; color: var(--negative); }
+.save-recovery p { margin: 0 0 0.5rem; }
 
 /* Controls */
 .field { display: block; margin-bottom: 0.7rem; }

@@ -35,6 +35,20 @@ test("rapid queued changes coalesce to the newest snapshot", async () => {
   assert.deepEqual(statuses, ["saving", "saved"]);
 });
 
+test("enqueue immediately reports that edits are waiting to be saved", (t) => {
+  const statuses = [];
+  const queue = createSaveQueue({
+    delay: 60_000,
+    save: async () => '"v1"',
+    onStatus: (status) => statuses.push(status),
+  });
+  t.after(() => queue.stop());
+
+  queue.enqueue(state(100));
+
+  assert.deepEqual(statuses, ["saving"]);
+});
+
 test("successful writes advance ETags in order", async () => {
   const calls = [];
   const queue = createSaveQueue({
@@ -67,6 +81,7 @@ test("a newer snapshot waits for an in-flight write and then saves in order", as
   const firstGate = new Promise((resolve) => {
     releaseFirst = resolve;
   });
+  const statuses = [];
   const queue = createSaveQueue({
     etag: '"v1"',
     delay: 60_000,
@@ -78,6 +93,7 @@ test("a newer snapshot waits for an in-flight write and then saves in order", as
       }
       return `"v${calls.length + 1}"`;
     },
+    onStatus: (status) => statuses.push(status),
   });
   queue.enqueue(state(100));
   const firstFlush = queue.flush();
@@ -94,6 +110,7 @@ test("a newer snapshot waits for an in-flight write and then saves in order", as
     { snapshot: state(100), etag: '"v1"' },
     { snapshot: state(200), etag: '"v2"' },
   ]);
+  assert.deepEqual(statuses, ["saving", "saved"]);
 });
 
 test("a failed save pauses the queue instead of claiming success", async () => {

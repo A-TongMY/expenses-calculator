@@ -1,3 +1,5 @@
+import { isDate } from "./rules.js";
+
 export const money = new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR" });
 
 export const range = (low, high) =>
@@ -13,6 +15,23 @@ export const monthLabel = (month) => {
 export const currentMonth = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+
+export const currentDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+
+const dateFormat = new Intl.DateTimeFormat("en-MY", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+export const dateLabel = (date) => {
+  if (!isDate(date)) throw new RangeError("Invalid date.");
+  const [year, month, day] = date.split("-").map(Number);
+  return dateFormat.format(new Date(year, month - 1, day));
 };
 
 export const cadenceLabel = (everyMonths) => {

@@ -105,3 +105,12 @@ export function recordCheckIn(checkIns, item, month, actual) {
     : { month, itemId: item.id, name: item.name, low, high, actual };
   return [...checkIns.filter((other) => !isSame(other)), checkIn];
 }
+
+export function spendingTotals(spending = [], month) {
+  const totals = new Map();
+  for (const entry of spending) {
+    if (entry.date.slice(0, 7) !== month) continue;
+    totals.set(entry.categoryId, (totals.get(entry.categoryId) ?? 0) + entry.amount);
+  }
+  return new Map([...totals].map(([id, amount]) => [id, roundToSen(amount)]));
+}

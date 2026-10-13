@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as calc from "../calc.js";
 import {
   isActiveIn,
   checkInGap,
@@ -12,6 +13,24 @@ import {
   tightestMonth,
   totalMonthlyCost,
 } from "../calc.js";
+
+test("spending totals group a month by category and round final sums", () => {
+  const result = calc.spendingTotals(
+    [
+      { date: "2026-10-01", categoryId: "food", amount: 0.104 },
+      { date: "2026-10-02", categoryId: "food", amount: 0.105 },
+      { date: "2026-10-03", categoryId: "travel", amount: 2.5 },
+      { date: "2026-11-01", categoryId: "food", amount: 900 },
+    ],
+    "2026-10",
+  );
+
+  assert.deepEqual(result, new Map([["food", 0.21], ["travel", 2.5]]));
+});
+
+test("spending totals default to an empty spending list", () => {
+  assert.deepEqual(calc.spendingTotals(undefined, "2026-10"), new Map());
+});
 
 test("a monthly expense costs its full amount each month", () => {
   assert.equal(monthlyCost({ amount: 850, everyMonths: 1 }), 850);

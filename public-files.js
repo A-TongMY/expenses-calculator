@@ -1,0 +1,17 @@
+export const PUBLIC_FILES = Object.freeze([
+  "index.html",
+  "styles.css",
+  "app.js",
+  "calc.js",
+  "backup.js",
+  "rules.js",
+  "format.js",
+  "storage.js",
+  "checkins.js",
+  "loan.js",
+  "houses.js",
+  "ui.js",
+  "charts.js",
+  "reports.js",
+  "home.js",
+]);

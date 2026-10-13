@@ -2,24 +2,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
-
-const PUBLIC_FILES = new Set([
-  "index.html",
-  "styles.css",
-  "app.js",
-  "calc.js",
-  "backup.js",
-  "rules.js",
-  "format.js",
-  "storage.js",
-  "checkins.js",
-  "loan.js",
-  "houses.js",
-  "ui.js",
-  "charts.js",
-  "reports.js",
-  "home.js",
-]);
+import { PUBLIC_FILES } from "./public-files.js";
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -50,7 +33,7 @@ export function createServer({ root = new URL("./", import.meta.url) } = {}) {
       // Matched on the raw path: parsing it as a URL throws on inputs like "//x:99999/".
       const path = req.url.split("?")[0];
       const name = path === "/" ? "index.html" : path.slice(1);
-      if (!PUBLIC_FILES.has(name)) {
+      if (!PUBLIC_FILES.includes(name)) {
         send(res, 404, { "content-type": "text/plain; charset=utf-8" }, "Not found");
         return;
       }

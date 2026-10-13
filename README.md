@@ -1,39 +1,59 @@
 # Expenses Calculator
 
-A personal expenses calculator. Enter your monthly income, your fixed commitments and your varying lifestyle spending (as a low and a high estimate), and see what remains each month as a best-to-worst range. A month-by-month projection honours start and end months and highlights the tightest month. Mark a commitment as a scenario to see, side by side, whether you could cope with something you are only considering. At month end, check in what you actually spent to see how it compares with your estimates.
+A personal expenses calculator for monthly income, fixed commitments, and varying lifestyle spending. See best-to-worst monthly estimates, month-by-month projections, and check-ins against actual spending. The Houses page tracks housing loans and repayment schedules. Amounts are in MYR.
 
-It is a static site in plain HTML, CSS and JavaScript, with no build step and no dependencies. Amounts are in MYR. The app shows the numbers and leaves the judgement to you.
-
-The app has three pages, switched from the bar at the top. The logo goes to **Home**, a dashboard with one card group per menu: metrics, charts and reports drawn from your saved data.
-
-- **Expenses**: the calculator described above.
-- **Houses**: keep track of housing loans. For each house enter the loan amount, the yearly interest rate, the term and the first installment month (and, optionally, the property price and the exact installment your bank charges). The page shows the monthly installment, the outstanding balance, principal and interest paid so far, total interest and total payable over the whole loan, plus a month-by-month schedule that splits every installment into interest and principal. Interest is charged on the reducing balance each month.
-
-Your data is stored in your browser only (`localStorage`). Nothing is sent to a server. Use **Export backup** to keep a copy or move to another device, and keep the exported file private.
+The app is a static HTML, CSS, and JavaScript frontend with Netlify Functions for sign-in and data access. Expense data is stored privately in Netlify Blobs and is available on devices where you sign in with the single allowed GitHub account. Access is restricted to GitHub user ID `45504842` (A-TongMY).
 
 ## Run locally
 
-Requires Node 20 or newer.
+Requires Node.js `>=20.12.2`.
 
 ```sh
-npm start        # serves the app at http://localhost:3000 (set PORT to change it)
-npm test         # runs the test suite with Node's built-in test runner
+npm ci
+npm run dev      # Netlify Dev serves the app and Functions locally
+npm test         # Node's built-in test runner
+npm run build    # creates the allowlisted static site in dist/
 ```
 
-## Deploy
+Without the Netlify environment variables below, authentication and state endpoints fail closed; the app does not replace remote data with an empty state. Automated tests use mock credentials and storage. Do not enter real expense data in an unconfigured local environment.
 
-The app is just static files, so it runs anywhere. Each site address has its own browser storage, so data entered on one host is not visible on another. Use export and import to move it.
+## Deploy to Netlify
 
-### GitHub Pages
+Netlify is the supported hosting and storage provider. Connect this repository to a Netlify site and deploy from the production branch. The included `netlify.toml` configures `npm run build`, publishes `dist/`, and deploys the Functions in `netlify/functions/`.
 
-1. Push the repository to GitHub.
-2. In **Settings → Pages**, set the source to **Deploy from a branch**, choose `main` and the `/ (root)` folder.
-3. Open the URL GitHub shows. `server.js` is not used here.
+### Configure GitHub sign-in
 
-### Railway (and similar hosts: Render, Fly.io, Koyeb)
+1. In GitHub, create an OAuth App under **Settings → Developer settings → OAuth Apps**. Set its **Authorization callback URL** to `https://your-site.example/api/auth/callback`, replacing the origin with the exact production `PUBLIC_SITE_URL`. The app requests only the `read:user` scope.
+2. In Netlify's site environment-variable settings, add the five values below for the Functions runtime. Keep the client secret and session secret private; do not put secrets in source files, commit them, or expose them in browser code.
 
-1. In Railway choose **New Project → Deploy from GitHub repo** and select this repository.
-2. Railway detects Node and runs `npm start`, which starts `server.js` on the `PORT` Railway provides. No configuration or environment variables are needed.
-3. Under **Settings → Networking**, choose **Generate Domain**.
+| Variable | Value |
+| --- | --- |
+| `GITHUB_OAUTH_CLIENT_ID` | Client ID from the GitHub OAuth App |
+| `GITHUB_OAUTH_CLIENT_SECRET` | Client secret from the GitHub OAuth App |
+| `GITHUB_ALLOWED_USER_ID` | `45504842` |
+| `SESSION_SECRET` | A newly generated secret of at least 32 bytes |
+| `PUBLIC_SITE_URL` | The canonical HTTPS origin of the production Netlify site, with no trailing slash |
 
-`server.js` serves only the files the app loads (listed in `PUBLIC_FILES` in `server.js`) and adds security headers. If you add a new file the app loads, add it to that list and to the list in `test/server.test.js`. GitHub Pages sends no custom headers, so `index.html` carries its own Content-Security-Policy tag.
+To generate a session secret locally, run:
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+Copy the output directly into Netlify's `SESSION_SECRET` setting. Do not save it in the repository. The configured callback URL is `${PUBLIC_SITE_URL}/api/auth/callback`.
+
+The allowlist uses GitHub's stable numeric user ID, not a changeable login name. To confirm an account's ID, open `https://api.github.com/users/A-TongMY` and read the `id` field; only `45504842` is authorized by this application.
+
+### Disable Deploy Previews
+
+Disable Netlify Deploy Previews in the site's deploy settings. Netlify Blobs storage is site-wide, so preview deploys would use the same private data store as production. Keep production deploys on the canonical site origin configured by `PUBLIC_SITE_URL`.
+
+## Data migration and backups
+
+After signing in, the app checks the remote account before loading data. If the remote account is empty and this browser contains a valid legacy backup, the app offers a one-time migration. Migration is opt-in and creates the remote state only if it is still empty. Choosing not to migrate starts with an empty remote account. Your existing browser data is not automatically deleted or modified by migration.
+
+Use **Export backup** to keep a private copy or **Import backup** to restore data to the signed-in account. Keep exported files private: they contain your expense data. A failed save leaves changes available in the current tab for export and retry; a stale save is reported rather than silently overwriting a newer remote copy.
+
+## Hosting support
+
+This repository supports deployment through Netlify, including its Functions and Blobs integration. GitHub Pages, Railway, and other static or server hosts do not provide the configured authentication and storage backend.

@@ -1,54 +1,148 @@
 import { exportBackup, importBackup } from "./backup.js";
 
 export const STORAGE_KEY = "expenses-calculator";
-const UNREADABLE_PREFIX = `${STORAGE_KEY}:unreadable:`;
 
-export const blankState = () => ({ income: 0, commitments: [], lifestyle: [], checkIns: [], houses: [] });
+export class StorageError extends Error {
+  constructor(message, status = null) {
+    super(message);
+    this.name = "StorageError";
+    this.status = status;
+  }
+}
 
-function keepUnreadableCopy(saved) {
+export class AuthRequiredError extends StorageError {
+  constructor() {
+    super("Sign in with the allowed GitHub account to access your data.", 401);
+    this.name = "AuthRequiredError";
+  }
+}
+
+export class StorageConflictError extends StorageError {
+  constructor() {
+    super("The remote state changed before this write completed.", 409);
+    this.name = "StorageConflictError";
+  }
+}
+
+const parseResponseJson = async (response) => {
   try {
-    const existing = Object.keys(localStorage).find(
-      (key) => key.startsWith(UNREADABLE_PREFIX) && localStorage.getItem(key) === saved,
-    );
-    if (existing) return existing;
-    const key = `${UNREADABLE_PREFIX}${new Date().toISOString()}`;
-    localStorage.setItem(key, saved);
-    return key;
+    return await response.json();
   } catch {
     return null;
   }
-}
+};
 
-// Never throws: problems come back as a notice for the caller to show.
-export function loadState() {
-  let saved;
+const validatedBackup = (value) => {
   try {
-    saved = localStorage.getItem(STORAGE_KEY);
+    const state = typeof value === "string" ? importBackup(value) : importBackup(exportBackup(value));
+    return { state, backup: exportBackup(state) };
   } catch {
-    return {
-      state: blankState(),
-      notice: "This browser is blocking storage, so changes will not be saved. Use Export backup to keep your data.",
-    };
+    throw new StorageError("The expense data is not a valid backup.");
   }
-  if (!saved) return { state: blankState() };
-  try {
-    return { state: importBackup(saved) };
-  } catch {
-    const key = keepUnreadableCopy(saved);
-    return {
-      state: blankState(),
-      notice: key
-        ? `Your saved data could not be read, so the app started empty. The original was kept untouched in this browser (storage key "${key}").`
-        : "Your saved data could not be read, so the app started empty, and a copy could not be kept. Do not make changes if you want to recover it.",
-    };
-  }
-}
+};
 
-export function saveState(state) {
-  try {
-    localStorage.setItem(STORAGE_KEY, exportBackup(state));
-    return true;
-  } catch {
-    return false;
-  }
+export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
+  const getStorage = () => {
+    if (storage !== undefined) return storage;
+    try {
+      return globalThis.localStorage;
+    } catch {
+      return null;
+    }
+  };
+
+  const requestState = async (options) => {
+    try {
+      return await fetchImpl("/api/state", {
+        ...options,
+        credentials: "same-origin",
+        headers: { accept: "application/json", ...options.headers },
+      });
+    } catch {
+      throw new StorageError("The remote expense service could not be reached.");
+    }
+  };
+
+  const writeBackup = async (backup, condition) => {
+    const response = await requestState({
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        ...condition,
+      },
+      body: JSON.stringify({ backup }),
+    });
+    if (response.status === 401) throw new AuthRequiredError();
+    if (response.status === 409) throw new StorageConflictError();
+    if (response.status !== 200) {
+      throw new StorageError("The remote expense data could not be saved.", response.status);
+    }
+    const etag = response.headers.get("etag");
+    if (!etag) throw new StorageError("The remote service returned no state version.");
+    return etag;
+  };
+
+  return {
+    async loadState() {
+      const response = await requestState({ method: "GET" });
+      const body = await parseResponseJson(response);
+      if (response.status === 401) throw new AuthRequiredError();
+      if (response.status === 404 && body?.error === "state_not_found") {
+        return { status: "empty" };
+      }
+      if (response.status !== 200) {
+        throw new StorageError("The remote expense data could not be loaded.", response.status);
+      }
+      if (!body || typeof body.backup !== "string") {
+        throw new StorageError("The remote service returned an invalid state response.");
+      }
+      const etag = response.headers.get("etag");
+      if (!etag) throw new StorageError("The remote service returned no state version.");
+      const { state } = validatedBackup(body.backup);
+      return { status: "loaded", state, etag };
+    },
+
+    async saveState(state, etag) {
+      if (typeof etag !== "string" || !etag) {
+        throw new StorageError("A remote state version is required before saving.");
+      }
+      const { backup } = validatedBackup(state);
+      return writeBackup(backup, { "If-Match": etag });
+    },
+
+    loadLegacyState() {
+      let saved;
+      try {
+        const browserStorage = getStorage();
+        if (!browserStorage) throw new Error("Browser storage is unavailable.");
+        saved = browserStorage.getItem(STORAGE_KEY);
+      } catch {
+        return {
+          status: "unavailable",
+          notice: "This browser's saved data could not be checked. It has not been changed.",
+        };
+      }
+      if (saved === null) return { status: "absent" };
+      if (typeof saved !== "string") {
+        return {
+          status: "invalid",
+          notice: "The saved data in this browser could not be read as an expense backup.",
+        };
+      }
+      try {
+        return { status: "available", backup: saved, state: importBackup(saved) };
+      } catch {
+        return {
+          status: "invalid",
+          notice: "The saved data in this browser is not a valid expense backup. The original was kept.",
+        };
+      }
+    },
+
+    async migrateLegacyState(backup) {
+      const validated = validatedBackup(backup);
+      const etag = await writeBackup(validated.backup, { "If-None-Match": "*" });
+      return { status: "migrated", state: validated.state, etag };
+    },
+  };
 }

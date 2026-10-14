@@ -7,6 +7,39 @@ const rent = { id: "c1", name: "Rent", amount: 1500, everyMonths: 1 };
 const food = { id: "l1", name: "Food", low: 400, high: 600, everyMonths: 1 };
 const base = { income: 6000, commitments: [rent], lifestyle: [food], checkIns: [], houses: [] };
 
+test("expense breakdown and remaining totals use the same mixed actual costs", () => {
+  const report = expenseReport({
+    ...base,
+    lifestyle: [food, { id: "salon", name: "Salon", low: 120, high: 210, everyMonths: 3 }],
+    spending: [{ id: "s1", date: "2026-10-13", categoryId: "salon", amount: 180, description: "Haircut" }],
+  }, "2026-10");
+  assert.deepEqual(report.costs.map(({ name, value }) => [name, value]), [["Rent", 1500], ["Food", 600], ["Salon", 180]]);
+  assert.equal(report.lifestyle.source, "mixed");
+  assert.equal(report.spent, 2280);
+  assert.deepEqual(report.left, { best: 3920, worst: 3720 });
+  assert.deepEqual(report.actuals, [
+    { month: "2026-10", items: 1, low: 40, high: 70, actual: 180, kind: "over" },
+  ]);
+});
+
+test("actual trends derive current estimates from recorded pairs only, ignoring retired check-ins", () => {
+  const report = expenseReport({
+    ...base,
+    lifestyle: [{ ...food, name: "Groceries", low: 500, high: 800 }, { id: "fuel", name: "Fuel", low: 50, high: 100, everyMonths: 1 }],
+    checkIns: [{ month: "2026-09", low: 1, high: 2, actual: 900 }],
+    spending: [{ id: "s1", date: "2026-10-13", categoryId: "l1", amount: 650, description: "Shop" }],
+  }, "2026-10");
+  assert.deepEqual(report.actuals, [
+    { month: "2026-10", items: 1, low: 500, high: 800, actual: 650, kind: "within" },
+  ]);
+});
+
+test("canonical state without retired check-ins supports an empty actual trend", () => {
+  const report = expenseReport({ income: 0, commitments: [], lifestyle: [], spending: [], houses: [] }, "2026-10");
+  assert.deepEqual(report.actuals, []);
+  assert.equal(report.lifestyle.source, "estimate");
+});
+
 test("the expense report adds up what is left this month", () => {
   const report = expenseReport(base, "2026-10");
   assert.equal(report.hasData, true);

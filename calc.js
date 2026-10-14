@@ -25,9 +25,8 @@ export function totalMonthlyCost(commitments) {
   return roundToSen(commitments.reduce((sum, c) => sum + monthlyCost(c), 0));
 }
 
-export function remaining({ income, commitments, lifestyle }) {
+export function remaining({ income, commitments, lifestyle }, lifestyleCost = totalLifestyleCost(lifestyle)) {
   const afterCommitments = income - totalMonthlyCost(commitments);
-  const lifestyleCost = totalLifestyleCost(lifestyle);
   return {
     best: roundToSen(afterCommitments - lifestyleCost.low),
     worst: roundToSen(afterCommitments - lifestyleCost.high),
@@ -56,7 +55,25 @@ const projectionLength = (items, from) => {
   return Math.min(MAX_PROJECTION_MONTHS, Math.max(MIN_PROJECTION_MONTHS, latestEnd - from + 1));
 };
 
-export function projection({ income, commitments: allCommitments, lifestyle }, fromMonth) {
+export function lifestyleCostsForMonth(lifestyle, spending = [], month) {
+  const totals = spendingTotals(spending, month);
+  const items = activeIn(lifestyle, month).map((item) => {
+    const actual = totals.has(item.id);
+    const cost = actual
+      ? { low: totals.get(item.id), high: totals.get(item.id) }
+      : lifestyleMonthlyCost(item);
+    return { id: item.id, name: item.name, ...cost, source: actual ? "actual" : "estimate" };
+  });
+  const actualCount = items.filter((item) => item.source === "actual").length;
+  return {
+    low: roundToSen(items.reduce((sum, item) => sum + item.low, 0)),
+    high: roundToSen(items.reduce((sum, item) => sum + item.high, 0)),
+    source: actualCount === 0 ? "estimate" : actualCount === items.length ? "actual" : "mixed",
+    items,
+  };
+}
+
+export function projection({ income, commitments: allCommitments, lifestyle, spending = [] }, fromMonth) {
   const real = allCommitments.filter((commitment) => !commitment.scenario);
   const counted = allCommitments.filter((commitment) => !commitment.scenario || commitment.scenario.on);
   const from = monthIndex(fromMonth);
@@ -64,17 +81,17 @@ export function projection({ income, commitments: allCommitments, lifestyle }, f
   const length = projectionLength([...counted, ...lifestyle], from);
   return Array.from({ length }, (_, offset) => {
     const month = monthAt(from + offset);
-    const activeLifestyle = activeIn(lifestyle, month);
+    const lifestyleCost = lifestyleCostsForMonth(lifestyle, spending, month);
     const figuresFor = (commitments) => {
       const active = activeIn(commitments, month);
       return {
         commitments: totalMonthlyCost(active),
-        ...remaining({ income, commitments: active, lifestyle: activeLifestyle }),
+        ...remaining({ income, commitments: active, lifestyle }, lifestyleCost),
       };
     };
     return {
       month,
-      lifestyle: totalLifestyleCost(activeLifestyle),
+      lifestyle: lifestyleCost,
       ...figuresFor(real),
       inBaselineWindow: offset < baselineLength,
       withScenarios: figuresFor(counted),

@@ -2,7 +2,6 @@
 import {
   checkInGap,
   isActiveIn,
-  lifestyleMonthlyCost,
   monthAt,
   monthIndex,
   monthlyCost,
@@ -11,6 +10,7 @@ import {
   tightestMonth,
 } from "./calc.js";
 import { housesOverview, loanSummary } from "./loan.js";
+import { spendingComparisons } from "./spending.js";
 
 const sum = (items, pick) => roundToSen(items.reduce((total, item) => total + pick(item), 0));
 
@@ -46,9 +46,8 @@ export function expenseReport(state, month) {
     ...state.commitments
       .filter((item) => !item.scenario && isActiveIn(item, month))
       .map((item) => ({ id: item.id, name: item.name, kind: "commitment", value: monthlyCost(item) })),
-    ...state.lifestyle
-      .filter((item) => isActiveIn(item, month))
-      .map((item) => ({ id: item.id, name: item.name, kind: "lifestyle", value: lifestyleMonthlyCost(item).high })),
+    ...now.lifestyle.items
+      .map((item) => ({ id: item.id, name: item.name, kind: "lifestyle", value: item.high })),
   ]
     .filter((cost) => cost.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -66,7 +65,7 @@ export function expenseReport(state, month) {
     spentShare: income > 0 ? spent / income : null,
     tightest: tightestMonth(months),
     costs,
-    checkIns: checkInTrend(state.checkIns),
+    actuals: checkInTrend(spendingComparisons(state)),
   };
 }
 

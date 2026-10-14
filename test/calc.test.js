@@ -239,7 +239,10 @@ test("each projected month carries that month's commitments and lifestyle totals
   );
   assert.deepEqual(months[0].commitments, 1650);
   assert.deepEqual(months[1].commitments, 1500);
-  assert.deepEqual(months[0].lifestyle, { low: 400, high: 600 });
+  assert.deepEqual(months[0].lifestyle, {
+    low: 400, high: 600, source: "estimate",
+    items: [{ id: undefined, name: undefined, low: 400, high: 600, source: "estimate" }],
+  });
 });
 
 test("a projection starting after every end month is still twelve months", () => {
@@ -376,6 +379,80 @@ test("switching a scenario on or off does not move the baseline's tightest month
       { amount: 50, everyMonths: 1, endMonth: "2028-06", scenario: { on } },
     ],
     lifestyle: [],
+  });
+
+  const actualState = {
+    income: 5000,
+    commitments: [],
+    lifestyle: [foodItem, salonItem],
+    spending: [
+      { id: "s1", date: "2026-10-13", categoryId: "l2", amount: 180, description: "Haircut" },
+      { id: "s2", date: "2026-10-20", categoryId: "l2", amount: 20, description: "Products" },
+      { id: "s3", date: "2026-11-30", categoryId: "l1", amount: 350, description: "Groceries" },
+    ],
+  };
+
+  test("actual costs replace only recorded categories without cadence division", () => {
+    assert.equal(typeof calc.lifestyleCostsForMonth, "function");
+    assert.deepEqual(calc.lifestyleCostsForMonth(actualState.lifestyle, actualState.spending, "2026-10"), {
+      low: 600, high: 800, source: "mixed",
+      items: [
+        { id: "l1", name: "Food", low: 400, high: 600, source: "estimate" },
+        { id: "l2", name: "Salon", low: 200, high: 200, source: "actual" },
+      ],
+    });
+  });
+
+  test("future-month actuals replace only that month's categories and keep the horizon", () => {
+    const months = projection(actualState, "2026-10");
+    assert.equal(months.length, 12);
+    assert.deepEqual({ best: months[0].best, worst: months[0].worst }, { best: 4400, worst: 4200 });
+    assert.deepEqual({ best: months[1].best, worst: months[1].worst }, { best: 4610, worst: 4580 });
+    assert.deepEqual({ best: months[2].best, worst: months[2].worst }, { best: 4560, worst: 4330 });
+    assert.equal(tightestMonth(months).month, "2026-10");
+  });
+
+  for (const on of [false, true]) {
+    test(`scenario ${on ? "on" : "off"} shares the same effective Lifestyle cost`, () => {
+      const [row] = projection({
+        ...actualState,
+        commitments: [{ amount: 100, everyMonths: 1, scenario: { on } }],
+      }, "2026-10");
+      assert.equal(row.worst, 4200);
+      assert.deepEqual(row.withScenarios, on
+        ? { commitments: 100, best: 4300, worst: 4100 }
+        : { commitments: 0, best: 4400, worst: 4200 });
+    });
+  }
+
+  test("remaining accepts effective costs while its default remains estimate-only", () => {
+    assert.deepEqual(remaining(actualState, { low: 600, high: 800 }), { best: 4400, worst: 4200 });
+    assert.deepEqual(remaining(actualState), { best: 4560, worst: 4330 });
+  });
+
+  test("fully recorded zero-estimate categories use actuals and inactive categories stay excluded", () => {
+    const lifestyle = [
+      { id: "zero", name: "Zero", low: 0, high: 0, everyMonths: 1 },
+      { ...foodItem, startMonth: "2026-11" },
+    ];
+    const spending = [{ id: "s", date: "2026-10-01", categoryId: "zero", amount: 15, description: "Payment" }];
+    assert.equal(typeof calc.lifestyleCostsForMonth, "function");
+    assert.deepEqual(calc.lifestyleCostsForMonth(lifestyle, spending, "2026-10"), {
+      low: 15, high: 15, source: "actual",
+      items: [{ id: "zero", name: "Zero", low: 15, high: 15, source: "actual" }],
+    });
+  });
+
+  test("valid multiple payments can exceed the per-entry amount limit in totals", () => {
+    const [row] = projection({
+      ...actualState,
+      spending: [
+        { ...actualState.spending[0], amount: 1_000_000_000 },
+        { ...actualState.spending[1], amount: 1_000_000_000 },
+      ],
+    }, "2026-10");
+    assert.equal(row.lifestyle.high, 2_000_000_600);
+    assert.equal(row.worst, -1_999_995_600);
   });
   const off = projection(withLateScenario(false), "2026-10");
   const on = projection(withLateScenario(true), "2026-10");

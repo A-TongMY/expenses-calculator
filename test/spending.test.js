@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { currentDate, dateLabel } from "../format.js";
+import { projection } from "../calc.js";
 import * as rules from "../rules.js";
 
 const spending = await import("../spending.js").catch(() => null);
@@ -29,6 +30,13 @@ const lunch = {
   amount: 12.5,
   description: "Lunch",
 };
+
+test("deleting the last recorded category entry restores its estimates", () => {
+  const recorded = spending.saveSpendingEntry(state, lunch);
+  assert.equal(projection(recorded, "2026-10")[0].lifestyle.high, 92.5);
+  const deleted = spending.deleteSpendingEntry(recorded, lunch.id);
+  assert.equal(projection(deleted, "2026-10")[0].lifestyle.high, 680);
+});
 
 test("saving entries is immutable and editing retains identity", () => {
   const saved = spending.saveSpendingEntry(state, lunch);

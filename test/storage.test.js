@@ -137,6 +137,21 @@ test("saveState sends the validated backup and propagates its ETag", async () =>
   assert.deepEqual(JSON.parse(request.options.body), { backup: validBackup });
 });
 
+test("saving malformed Spending lists rejects the state instead of silently clearing entries", async () => {
+  let writes = 0;
+  const client = createStorageClient({
+    fetchImpl: async () => {
+      writes += 1;
+      return responseJson({ ok: true }, 200, { etag: '"v2"' });
+    },
+    storage: memoryStorage(),
+  });
+  for (const spending of [undefined, null, "not a list", {}]) {
+    await assert.rejects(client.saveState({ ...validState, spending }, '"v1"'), StorageError);
+  }
+  assert.equal(writes, 0);
+});
+
 test("saveState creates the first remote state conditionally when no ETag exists", async () => {
   let request;
   const client = createStorageClient({

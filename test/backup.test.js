@@ -92,6 +92,12 @@ test("exporting writes the current schema version", () => {
   assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 7);
 });
 
+test("exporting malformed canonical lists fails rather than writing an empty list", () => {
+  for (const key of ["commitments", "lifestyle", "houses", "spending"]) {
+    assert.throws(() => exportBackup(stateWith({ [key]: "invalid" })), /not a valid backup/);
+  }
+});
+
 test("a version 1 backup, from before lifestyle spending existed, still imports", () => {
   const file = JSON.stringify({
     schemaVersion: 1,

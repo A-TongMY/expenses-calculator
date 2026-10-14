@@ -85,16 +85,15 @@ const toLegacyState = (data) => ({
 });
 
 export function exportBackup(state) {
+  if (!state || !isCurrentState(state)) {
+    throw new Error(
+      "This file is not a valid backup: the data is not in the expected shape.",
+    );
+  }
   return JSON.stringify(
     {
       schemaVersion: SCHEMA_VERSION,
-      data: {
-        income: state.income,
-        commitments: Array.isArray(state.commitments) ? state.commitments.map(toCommitment) : [],
-        lifestyle: Array.isArray(state.lifestyle) ? state.lifestyle.map(toLifestyle) : [],
-        houses: Array.isArray(state.houses) ? state.houses.map(toHouse) : [],
-        spending: Array.isArray(state.spending) ? state.spending.map(toSpending) : [],
-      },
+      data: toCurrentState(state),
     },
     null,
     2,

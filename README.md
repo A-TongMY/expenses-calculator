@@ -1,8 +1,16 @@
 # Expenses Calculator
 
-A personal expenses calculator for monthly income, fixed commitments, and varying lifestyle spending. See best-to-worst monthly estimates, month-by-month projections, and check-ins against actual spending. The Houses page tracks housing loans and repayment schedules. Amounts are in MYR.
+A personal expenses calculator for monthly income, fixed commitments, Lifestyle estimates, and daily Spending. See remaining income, month-by-month projections, and actual spending against estimates. The Houses page tracks housing loans and repayment schedules. Amounts are in MYR.
 
 The app is a static HTML, CSS, and JavaScript frontend with Netlify Functions for sign-in and data access. Expense data is stored privately in Netlify Blobs and is available on devices where you sign in with the single allowed GitHub account. Access is restricted to GitHub user ID `45504842` (A-TongMY).
+
+## Spending and actuals
+
+Spending records dated payments under Lifestyle categories. Add, edit, or delete entries, and filter by month and category. Past and future dates are allowed. Recorded monthly category totals replace that category's estimates in Expenses, Home, and projections; categories without entries retain their estimates. Actual payments are not divided by the category's repeat interval. Removing the last entry for a category/month restores its estimate.
+
+Spending shows the filtered total, entry count, average per calendar day, and category chart. The average uses every day in the selected month, including leap days, not just elapsed days. Home shows the current month across all categories, independently of Spending filters. Actual-versus-estimate comparisons use only recorded category/month pairs and current category names and estimates.
+
+Each entry requires a real date, an existing category, a positive amount up to MYR 1,000,000,000, and a nonblank description of at most 500 characters. Descriptions are trimmed when submitted. Spending is limited to 2,000 entries; backup files remain limited to 2 MiB. Entries must be inside their category's inclusive active months. Renaming a category updates linked entries; deleting a referenced category or shortening its period past an entry is blocked until those entries are moved or deleted.
 
 ## Run locally
 
@@ -52,7 +60,9 @@ Disable Netlify Deploy Previews in the site's deploy settings. Netlify Blobs sto
 
 After signing in, the app checks the remote account before loading data. If the remote account is empty and this browser contains a valid legacy backup, the app offers a one-time migration. Migration is opt-in and creates the remote state only if it is still empty. Choosing not to migrate starts with an empty remote account. Your existing browser data is not automatically deleted or modified by migration.
 
-Use **Export backup** to keep a private copy or **Import backup** to restore data to the signed-in account. Keep exported files private: they contain your expense data. A failed save leaves changes available in the current tab for export and retry; a stale save is reported rather than silently overwriting a newer remote copy.
+Normal **Export** and **Import** actions are on Home only. Keep exported files private: they contain your expense data. A failed save leaves changes available in the current tab for export and retry; a stale save is reported rather than silently overwriting a newer remote copy. Recovery exports remain available after save failures, conflicts, and session expiry.
+
+New backups use schema version 7 and include Spending. Supported older backups retain income, commitments, Lifestyle categories, and houses, initialize Spending empty, and deliberately discard old check-ins with a notice. Check-ins never become daily entries or actuals. Loading an older remote record upgrades it in memory without writing; its original ETag is retained for the next normal conditional save. Opt-in browser migration leaves the original browser copy unchanged.
 
 ## Hosting support
 

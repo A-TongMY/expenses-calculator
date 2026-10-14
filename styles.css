@@ -320,3 +320,15 @@ form .hint:empty { display: none; }
 }
 .card > .bar-rows:first-of-type { margin-top: 0; }
 .stat.wide { grid-column: 1 / -1; }
+.renovation-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem; align-items: end; margin-bottom: 1rem; }
+.renovation-form h3, .renovation-form .note { grid-column: 1 / -1; }
+.renovation-form textarea { width: 100%; min-height: 5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.renovation-payments { padding: 0; list-style: none; display: grid; gap: 0.75rem; }
+.renovation-payments li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.renovation-payments li span { flex: 1 1 100%; overflow-wrap: anywhere; }
+#renovation-message:empty { display: none; }
+#renovation-list summary, #home-renovation summary { overflow-wrap: anywhere; }
+@media (max-width: 26rem) {
+  .renovation-form { grid-template-columns: minmax(0, 1fr); }
+  .topbar-inner { flex-wrap: wrap; }
+}

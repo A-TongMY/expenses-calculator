@@ -5,9 +5,10 @@ import { importBackup } from "../backup.js";
 import { createStorageClient, StorageConflictError } from "../storage.js";
 import { createStateHandler } from "../netlify/functions/state.js";
 import { createBlobStateStore } from "../netlify/functions/_shared/blob-state-store.js";
+import { emptyRenovation, fixture } from "./helpers/renovation-fixture.js";
 
 const origin = "https://expenses.example";
-const emptyState = { income: 0, commitments: [], lifestyle: [], houses: [], spending: [] };
+const emptyState = { ...emptyRenovation(), income: 0, commitments: [], lifestyle: [], houses: [], spending: [] };
 
 function headerStrippingTransport() {
   let backup = null;
@@ -77,6 +78,7 @@ test("a local-storage-era backup imported through normal save persists after hea
   await client.saveState(imported, null);
 
   assert.deepEqual((await client.loadState()).state, {
+    ...emptyRenovation(),
     income: 5000,
     commitments: [{ id: "rent", name: "Rent", amount: 1500, everyMonths: 1 }],
     lifestyle: [],
@@ -128,5 +130,23 @@ test("conditional transport preserves canonical Spending entries on create and u
 
   const updated = { ...state, spending: [{ ...state.spending[0], amount: 20 }] };
   await client.saveState(updated, etag);
+  assert.deepEqual((await client.loadState()).state, updated);
+});
+
+test("Renovation persists through SDK conditional saves when transport drops headers", async () => {
+  const client = headerStrippingTransport();
+  const state = fixture();
+  const etag = await client.saveState(state, null);
+  assert.deepEqual((await client.loadState()).state, state);
+  const updated = {
+    ...state,
+    renovationPayments: [...state.renovationPayments, {
+      id: "oct", itemId: "cabinets", date: "2026-10-14",
+      amount: 400, kind: "payment", installmentMonth: "2026-10",
+    }],
+  };
+  await client.saveState(updated, etag);
+  assert.deepEqual((await client.loadState()).state, updated);
+  await assert.rejects(client.saveState(state, etag), StorageConflictError);
   assert.deepEqual((await client.loadState()).state, updated);
 });

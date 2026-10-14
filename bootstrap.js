@@ -6,6 +6,9 @@ const blankState = () => ({
   lifestyle: [],
   spending: [],
   houses: [],
+  renovationCategories: [],
+  renovationItems: [],
+  renovationPayments: [],
 });
 
 const initialized = (state, etag, migrated, notice) => ({

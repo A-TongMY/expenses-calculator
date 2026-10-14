@@ -8,12 +8,21 @@ import {
   isValidLifestyle,
   isValidSpending,
 } from "./rules.js";
+import { isValidRenovationState } from "./renovation.js";
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
+const SPENDING_SINCE = 7;
+const RENOVATION_SINCE = 8;
 const LIFESTYLE_SINCE = 2;
 const CHECK_INS_SINCE = 5;
 const HOUSES_SINCE = 6;
 const SPENDING_FIELDS = ["id", "date", "categoryId", "amount", "description"];
+const RENOVATION_CATEGORY_FIELDS = ["id", "houseId", "name"];
+const RENOVATION_ITEM_FIELDS = ["id", "houseId", "categoryId", "name", "budget", "actualCost", "notes"];
+const RENOVATION_PAYMENT_FIELDS = ["id", "itemId", "date", "amount", "kind", "installmentMonth"];
+const emptyRenovation = () => ({
+  renovationCategories: [], renovationItems: [], renovationPayments: [],
+});
 
 const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth", "scenario"];
 const LIFESTYLE_FIELDS = ["id", "name", "low", "high", "everyMonths", "startMonth", "endMonth"];
@@ -44,9 +53,10 @@ const checkInKey = ({ month, itemId }) => `${month}|${itemId}`;
 const upgrade = (data, version) => ({
   ...data,
   lifestyle: version < LIFESTYLE_SINCE ? [] : data?.lifestyle,
-  checkIns: version < CHECK_INS_SINCE || version >= SCHEMA_VERSION ? [] : data?.checkIns,
+  checkIns: version < CHECK_INS_SINCE || version >= SPENDING_SINCE ? [] : data?.checkIns,
   houses: version < HOUSES_SINCE ? [] : data?.houses,
-  spending: version < SCHEMA_VERSION ? [] : data?.spending,
+  spending: version < SPENDING_SINCE ? [] : data?.spending,
+  ...(version < RENOVATION_SINCE ? emptyRenovation() : {}),
 });
 
 const isLegacyState = (data) =>
@@ -66,7 +76,8 @@ const isCurrentState = (data) =>
     (entry) => isValidSpending(entry, data.lifestyle),
     undefined,
     MAX_ITEMS,
-  );
+  ) &&
+  isValidRenovationState(data);
 
 const toCurrentState = (data) => ({
   income: data.income,
@@ -74,6 +85,13 @@ const toCurrentState = (data) => ({
   lifestyle: data.lifestyle.map(toLifestyle),
   houses: data.houses.map(toHouse),
   spending: data.spending.map(toSpending),
+  renovationCategories: data.renovationCategories.map((category) => pick(category, RENOVATION_CATEGORY_FIELDS)),
+  renovationItems: data.renovationItems.map((item) => ({
+    ...pick(item, RENOVATION_ITEM_FIELDS),
+    ...(item.installmentPlan !== undefined
+      ? { installmentPlan: pick(item.installmentPlan, ["startMonth", "amount", "count"]) } : {}),
+  })),
+  renovationPayments: data.renovationPayments.map((payment) => pick(payment, RENOVATION_PAYMENT_FIELDS)),
 });
 
 const toLegacyState = (data) => ({
@@ -82,6 +100,7 @@ const toLegacyState = (data) => ({
   lifestyle: data.lifestyle.map(toLifestyle),
   houses: data.houses.map(toHouse),
   spending: [],
+  ...emptyRenovation(),
 });
 
 export function exportBackup(state) {
@@ -119,7 +138,7 @@ export function readBackup(file) {
       "This file is not a valid backup: the data is not in the expected shape.",
     );
   }
-  if (version < SCHEMA_VERSION) {
+  if (version < SPENDING_SINCE) {
     const notice =
       Array.isArray(data.checkIns) && data.checkIns.length > 0
         ? "Older check-ins were removed from the remote copy."

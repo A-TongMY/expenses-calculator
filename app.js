@@ -5,6 +5,8 @@ import { setupSpending } from "./spending-ui.js";
 import { assertLifestyleChangeAllowed } from "./spending.js";
 import { setupHome } from "./home.js";
 import { setupHouses } from "./houses.js";
+import { setupRenovation } from "./renovation-ui.js";
+import { renovationDate } from "./renovation-calendar.js";
 import { createSaveQueue } from "./persistence.js";
 import { cadenceLabel, currentMonth, money, monthLabel, periodLabel, range } from "./format.js";
 import {
@@ -89,7 +91,10 @@ function showNotice(message) {
 }
 
 const storage = createStorageClient();
-let state = { income: 0, commitments: [], lifestyle: [], spending: [], houses: [] };
+let state = {
+  income: 0, commitments: [], lifestyle: [], spending: [], houses: [],
+  renovationCategories: [], renovationItems: [], renovationPayments: [],
+};
 let etag = null;
 let saveQueue = null;
 let startupNotice = null;
@@ -426,10 +431,12 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
 );
 
 const spending = setupSpending({ getState: () => state, commit, newId });
-const houses = setupHouses({ getState: () => state, commit, newId });
+const houses = setupHouses({ getState: () => state, commit, newId, notify: showNotice });
+const renovation = setupRenovation({ getState: () => state, commit, newId });
 const home = setupHome({ getState: () => state });
 
 let shownMonth = null;
+let shownRenovationDate = null;
 
 function tightestLine(prefix, month, figures) {
   return `${prefix}${monthLabel(month)} · ${money.format(figures.worst)}`;
@@ -503,10 +510,12 @@ function renderOverview() {
 
 function renderAll() {
   shownMonth = currentMonth();
+  shownRenovationDate = renovationDate();
   renderOverview();
   for (const section of sections) section.render();
   spending.render();
   houses.render();
+  renovation.render();
   home.render();
 }
 
@@ -550,6 +559,7 @@ async function initializeApp() {
       confirmMigration: requestMigrationConfirmation,
     });
     state = initialized.state;
+    renovation.reset();
     etag = initialized.etag;
     startupNotice = initialized.notice;
     els.saveStatus.textContent = etag === null ? "Ready" : "Saved";
@@ -584,11 +594,11 @@ async function initializeApp() {
   }
 }
 
-const PAGES = ["home", "expenses", "spending", "houses"];
+const PAGES = ["home", "expenses", "spending", "houses", "renovation"];
 
 function showPage() {
   if (!appReady) return;
-  const requested = location.hash.replace(/^#\/?/, "");
+  const [requested, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
   const page = PAGES.includes(requested) ? requested : "home";
   for (const name of PAGES) {
     $(`page-${name}`).hidden = name !== page;
@@ -599,6 +609,11 @@ function showPage() {
   // Income changes on the Expenses page, so the dashboard is redrawn whenever it is shown.
   if (page === "home") home.render();
   if (page === "spending") spending.render();
+  if (page === "renovation") {
+    renovation.render();
+    const house = new URLSearchParams(query).get("house");
+    if (house) renovation.selectHouse(house);
+  }
 }
 
 window.addEventListener("hashchange", () => {
@@ -618,10 +633,12 @@ els.income.addEventListener("input", () => {
 els.income.addEventListener("change", syncIncomeField);
 
 function refreshIfMonthChanged() {
-  if (appReady && !document.hidden && currentMonth() !== shownMonth) renderAll();
+  if (appReady && !document.hidden &&
+    (currentMonth() !== shownMonth || renovationDate() !== shownRenovationDate)) renderAll();
 }
 
 document.addEventListener("visibilitychange", refreshIfMonthChanged);
+window.addEventListener("focus", refreshIfMonthChanged);
 // A tab left open and visible across midnight on the 1st never fires visibilitychange.
 setInterval(refreshIfMonthChanged, 60_000);
 
@@ -683,6 +700,7 @@ async function reloadRemoteVersion() {
       throw new StorageError("The remote version is no longer available.");
     }
     state = remote.state;
+    renovation.reset();
     startupNotice = remote.notice ?? null;
     etag = remote.etag;
     saveQueue.reset(etag);
@@ -771,6 +789,7 @@ els.importFile.addEventListener("change", async () => {
   for (const section of sections) section.reset();
   houses.reset();
   spending.reset();
+  renovation.reset();
   renderAll();
   try {
     await saveQueue.flush();

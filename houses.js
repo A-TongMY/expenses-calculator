@@ -1,5 +1,6 @@
 import { currentMonth, money, monthLabel, termLabel } from "./format.js";
 import { housesOverview, loanSummary, monthlyInstallment, repaysInFull } from "./loan.js";
+import { assertHouseDeletionAllowed } from "./renovation.js";
 import {
   MAX_AMOUNT,
   MAX_HOUSES,
@@ -24,7 +25,7 @@ const STATUS = {
   "paid off": { label: () => "Paid off", className: "done" },
 };
 
-export function setupHouses({ getState, commit, newId }) {
+export function setupHouses({ getState, commit, newId, notify }) {
   const form = byId("house-form");
   const field = (name) => form.elements.namedItem(name);
   const addPanel = byId("house-add");
@@ -111,7 +112,14 @@ export function setupHouses({ getState, commit, newId }) {
 
   function remove(id) {
     const house = find(id);
-    if (!house || !confirm(`Delete "${house.name}"?`)) return;
+    if (!house) return;
+    try {
+      assertHouseDeletionAllowed(getState(), id);
+    } catch (error) {
+      notify(error.message);
+      return;
+    }
+    if (!confirm(`Delete "${house.name}"?`)) return;
     if (editingId === id) reset();
     openHouses.delete(id);
     openSchedules.delete(id);

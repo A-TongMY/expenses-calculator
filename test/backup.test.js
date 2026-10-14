@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exportBackup, importBackup } from "../backup.js";
+import { emptyRenovation } from "./helpers/renovation-fixture.js";
 
 const sampleState = {
+  ...emptyRenovation(),
   income: 5000,
   commitments: [
     { id: "c1", name: "Rent", amount: 1500, everyMonths: 1 },
@@ -29,6 +31,7 @@ const checkIn = { month: "2026-10", itemId: "l1", name: "Food", low: 400, high: 
 const many = (count, make) => Array.from({ length: count }, (_, index) => make(index));
 
 const stateWith = (overrides) => ({
+  ...emptyRenovation(),
   income: 5000,
   commitments: [rent],
   lifestyle: [food],
@@ -37,7 +40,7 @@ const stateWith = (overrides) => ({
   ...overrides,
 });
 
-const backupOf = (data, schemaVersion = 7) => JSON.stringify({ schemaVersion, data });
+const backupOf = (data, schemaVersion = 8) => JSON.stringify({ schemaVersion, data });
 const legacyBackupOf = (data, schemaVersion = 6) =>
   JSON.stringify({
     schemaVersion,
@@ -89,7 +92,7 @@ test("a version 7 backup requires Spending", () => {
 });
 
 test("exporting writes the current schema version", () => {
-  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 7);
+  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 8);
 });
 
 test("exporting malformed canonical lists fails rather than writing an empty list", () => {
@@ -103,7 +106,7 @@ test("a version 1 backup, from before lifestyle spending existed, still imports"
     schemaVersion: 1,
     data: { income: 5000, commitments: [rent] },
   });
-  assert.deepEqual(importBackup(file), { income: 5000, commitments: [rent], lifestyle: [], houses: [], spending: [] });
+  assert.deepEqual(importBackup(file), { ...emptyRenovation(), income: 5000, commitments: [rent], lifestyle: [], houses: [], spending: [] });
 });
 
 test("importing something that is not JSON is rejected with a clear message", () => {
@@ -113,7 +116,7 @@ test("importing something that is not JSON is rejected with a clear message", ()
 });
 
 test("a backup from a newer version of the app is refused", () => {
-  assert.throws(() => importBackup(backupOf(sampleState, 8)), {
+  assert.throws(() => importBackup(backupOf(sampleState, 9)), {
     message: "This backup was made by a newer version of the app and cannot be imported.",
   });
 });
@@ -202,6 +205,7 @@ test("a lifestyle range with equal low and high is accepted", () => {
 
 test("fields the app does not know about are dropped on import", () => {
   const file = backupOf({
+    ...emptyRenovation(),
     income: 5000,
     secretNote: "keep out",
     commitments: [{ ...rent, notes: "keep out too" }],
@@ -224,13 +228,13 @@ for (const [label, lifestyle] of Object.entries(strayLifestyles)) {
       schemaVersion: 1,
       data: { income: 5000, commitments: [rent], lifestyle },
     });
-    assert.deepEqual(importBackup(file), { income: 5000, commitments: [rent], lifestyle: [], houses: [], spending: [] });
+    assert.deepEqual(importBackup(file), { ...emptyRenovation(), income: 5000, commitments: [rent], lifestyle: [], houses: [], spending: [] });
   });
 }
 
 test("a version 2 backup, from before start and end months existed, still imports", () => {
   const data = { income: 5000, commitments: [rent], lifestyle: [food] };
-  assert.deepEqual(importBackup(legacyBackupOf(data, 2)), { ...data, houses: [], spending: [] });
+  assert.deepEqual(importBackup(legacyBackupOf(data, 2)), { ...emptyRenovation(), ...data, houses: [], spending: [] });
 });
 
 test("an expense that starts and ends in the same month is accepted", () => {
@@ -240,7 +244,7 @@ test("an expense that starts and ends in the same month is accepted", () => {
 
 test("a version 3 backup, from before scenarios existed, still imports", () => {
   const data = { income: 5000, commitments: [rent], lifestyle: [food] };
-  assert.deepEqual(importBackup(legacyBackupOf(data, 3)), { ...data, houses: [], spending: [] });
+  assert.deepEqual(importBackup(legacyBackupOf(data, 3)), { ...emptyRenovation(), ...data, houses: [], spending: [] });
 });
 
 test("unknown fields inside a scenario are dropped", () => {
@@ -260,7 +264,7 @@ test("a scenario flag on a lifestyle item is dropped, because only commitments c
 
 test("a version 4 backup, from before check-ins existed, still imports", () => {
   const data = { income: 5000, commitments: [rent], lifestyle: [food] };
-  assert.deepEqual(importBackup(legacyBackupOf(data, 4)), { ...data, houses: [], spending: [] });
+  assert.deepEqual(importBackup(legacyBackupOf(data, 4)), { ...emptyRenovation(), ...data, houses: [], spending: [] });
 });
 
 test("version 6 check-ins are removed after their original data validates", async () => {
@@ -296,12 +300,12 @@ test("exactly 2000 items in a list is still accepted", () => {
 
 test("a version 5 backup, from before houses existed, still imports with no houses", () => {
   const data = { income: 5000, commitments: [rent], lifestyle: [food], checkIns: [] };
-  assert.deepEqual(importBackup(legacyBackupOf(data, 5)), { income: 5000, commitments: [rent], lifestyle: [food], houses: [], spending: [] });
+  assert.deepEqual(importBackup(legacyBackupOf(data, 5)), { ...emptyRenovation(), income: 5000, commitments: [rent], lifestyle: [food], houses: [], spending: [] });
 });
 
 test("a stray houses list on a version 5 backup is ignored", () => {
   const data = { income: 5000, commitments: [rent], lifestyle: [food], checkIns: [], houses: "junk" };
-  assert.deepEqual(importBackup(legacyBackupOf(data, 5)), { income: 5000, commitments: [rent], lifestyle: [food], houses: [], spending: [] });
+  assert.deepEqual(importBackup(legacyBackupOf(data, 5)), { ...emptyRenovation(), income: 5000, commitments: [rent], lifestyle: [food], houses: [], spending: [] });
 });
 
 test("a backup with an invalid house is rejected", () => {

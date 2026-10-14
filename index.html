@@ -67,6 +67,7 @@
       <a href="#/expenses" data-nav="expenses"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg><span>Expenses</span></a>
       <a href="#/spending" data-nav="spending"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>Spending</span></a>
       <a href="#/houses" data-nav="houses"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Houses</span></a>
+      <a href="#/renovation" data-nav="renovation"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Renovation</span></a>
       <span class="account-controls">
         <span id="account-label">A-TongMY</span>
         <span id="save-status" role="status" aria-live="polite">Ready</span>
@@ -103,6 +104,7 @@
         <summary><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span class="title">Spending</span><a class="open-link" href="#/spending" aria-label="Open Spending"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
         <div class="panel-body cards" id="home-spending"></div>
       </details>
+      <div id="home-renovation"></div>
       <details class="panel" data-panel="backup">
         <summary><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span class="title">Backup</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
         <div class="panel-body">
@@ -298,6 +300,32 @@
         <p id="spending-empty" class="empty">No entries for these filters</p>
         <p id="spending-total" class="note"></p>
       </section>
+    </div>
+
+    <div id="page-renovation" hidden>
+      <section class="overview" aria-labelledby="renovation-heading">
+        <h1 id="renovation-heading">Renovation</h1>
+        <label class="field"><span>House</span><select id="renovation-house"></select></label>
+        <p class="note">Plan and track each house separately. These costs do not change Expenses or Spending. Accounting dates use Malaysia time.</p>
+        <p id="renovation-no-houses" class="empty"><a href="#/houses">Add a house in Houses</a> to plan its renovation.</p>
+      </section>
+      <div id="renovation-workspace" hidden>
+        <section id="renovation-overview" class="cards" aria-label="Renovation overview"></section>
+        <section class="panel panel-body" aria-labelledby="renovation-category-heading">
+          <h2 id="renovation-category-heading">Renovation categories</h2>
+          <form id="renovation-category-form" class="renovation-form">
+            <label class="field"><span>Category name</span><input name="name" required maxlength="80" autocomplete="off"></label>
+            <button type="submit">Save category</button>
+            <button id="renovation-category-cancel" type="button" class="secondary">Cancel category edit</button>
+          </form>
+          <div id="renovation-categories"></div>
+        </section>
+        <div class="actions"><button id="renovation-add-item" type="button">Add renovation item</button></div>
+        <section id="renovation-editor" class="panel panel-body" hidden></section>
+        <div id="renovation-list"></div>
+        <p id="renovation-empty" class="empty">No renovation items for this house yet. Add a category, then an item.</p>
+      </div>
+      <p id="renovation-message" class="notice" role="status" aria-live="polite"></p>
     </div>
 
     <div id="page-houses" hidden>

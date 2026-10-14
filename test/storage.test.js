@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exportBackup } from "../backup.js";
 import { STORAGE_KEY } from "../storage.js";
+import { emptyRenovation } from "./helpers/renovation-fixture.js";
 
 const storageModule = await import("../storage.js");
 assert.equal(typeof storageModule.createStorageClient, "function", "the remote storage client must exist");
@@ -13,6 +14,7 @@ const {
 } = storageModule;
 
 const validState = {
+  ...emptyRenovation(),
   income: 0,
   commitments: [],
   lifestyle: [],

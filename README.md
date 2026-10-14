@@ -1,6 +1,6 @@
 # Expenses Calculator
 
-A personal expenses calculator for monthly income, fixed commitments, Lifestyle estimates, and daily Spending. See remaining income, month-by-month projections, and actual spending against estimates. The Houses page tracks housing loans and repayment schedules. Amounts are in MYR.
+A personal expenses calculator for monthly income, fixed commitments, Lifestyle estimates, and daily Spending. See remaining income, month-by-month projections, and actual spending against estimates. The Houses page tracks housing loans and repayment schedules; Renovation plans budgets and tracks actual costs and payments per house. Amounts are in MYR.
 
 The app is a static HTML, CSS, and JavaScript frontend with Netlify Functions for sign-in and data access. Expense data is stored privately in Netlify Blobs and is available on devices where you sign in with the single allowed GitHub account. Access is restricted to GitHub user ID `45504842` (A-TongMY).
 
@@ -11,6 +11,22 @@ Spending records dated payments under Lifestyle categories. Add, edit, or delete
 Spending shows the filtered total, entry count, average per calendar day, and category chart. The average uses every day in the selected month, including leap days, not just elapsed days. Home shows the current month across all categories, independently of Spending filters. Actual-versus-estimate comparisons use only recorded category/month pairs and current category names and estimates.
 
 Each entry requires a real date, an existing category, a positive amount up to MYR 1,000,000,000, and a nonblank description of at most 500 characters. Descriptions are trimmed when submitted. Spending is limited to 2,000 entries; backup files remain limited to 2 MiB. Entries must be inside their category's inclusive active months. Renaming a category updates linked entries; deleting a referenced category or shortening its period past an entry is blocked until those entries are moved or deleted.
+
+## Renovation
+
+Select an existing house and create its renovation categories. Categories are separate per house, even when names match. Each item has an optional budget and optional actual total cost; at least one is required. Zero is allowed. Missing budget is **Not budgeted**, and missing actual cost is unknown rather than zero.
+
+**Expected** uses actual cost where entered, otherwise budget. **Paid** is the sum of dated deposit/payment records, and **actual outstanding** is actual cost minus paid. Budget-only items do not create an actual liability. Budget-versus-actual comparisons include only items with both amounts.
+
+An actual-cost item can have one equal-monthly installment plan with a start month, amount, and 1-600 payments. Plans may cover only part of outstanding; the remainder is **unscheduled**. A payment may link to an installment, but linked totals cannot exceed that installment's amount. No money is automatically redistributed. Total payments cannot exceed actual cost, and unpaid scheduled amounts cannot exceed outstanding. An extra unlinked payment may therefore require allocating it or reducing the plan in the same edit.
+
+Actual payment dates must be today or earlier in **Asia/Kuala_Lumpur**. Renovation uses this accounting zone in both browser and server; other pages retain their existing date behavior. A remaining installment is due during its month and overdue only after that month ends. Passing a due date never records payment. Due and overdue are portions of outstanding, not additional costs.
+
+Item, plan, and payment edits are drafts. Use **Stage payment** to add/update a payment in the draft, then **Save all changes** to apply the whole item together. Unlinking payments and adjusting a plan can be done in one validated save. Stage or cancel unfinished payment input before saving the item; cancelling item changes discards its draft without changing saved data. Referenced houses/categories cannot be deleted. Item deletion requires confirmation and removes that item's payments and plan.
+
+Renovation and Home share the same overview calculations. Home shows a separate panel for each house with renovation items. Renovation does not affect Expenses, Spending, remaining income, mortgage calculations, or projections.
+
+Individual amounts are limited to MYR 1,000,000,000 with at most two decimals; calculations use integer sen. Payments/installment amounts must be positive. Names are trimmed, nonblank, and at most 80 characters; notes are at most 500 characters. Each renovation list is limited to 2,000 records. Backup files remain limited to 2 MiB.
 
 ## Run locally
 
@@ -62,7 +78,7 @@ After signing in, the app checks the remote account before loading data. If the 
 
 Normal **Export** and **Import** actions are on Home only. Keep exported files private: they contain your expense data. A failed save leaves changes available in the current tab for export and retry; a stale save is reported rather than silently overwriting a newer remote copy. Recovery exports remain available after save failures, conflicts, and session expiry.
 
-New backups use schema version 7 and include Spending. Supported older backups retain income, commitments, Lifestyle categories, and houses, initialize Spending empty, and deliberately discard old check-ins with a notice. Check-ins never become daily entries or actuals. Loading an older remote record upgrades it in memory without writing; its original ETag is retained for the next normal conditional save. Opt-in browser migration leaves the original browser copy unchanged.
+New backups use schema version 8 and include Spending plus renovation categories, items, and payments. Schema-7 backups preserve Spending and initialize Renovation empty. Supported versions 1-6 retain income, commitments, Lifestyle categories, and houses, initialize Spending/Renovation empty, and deliberately discard old check-ins with a notice. Check-ins never become daily entries or actuals. Loading an older remote record upgrades it in memory without writing; its original ETag is retained for the next normal conditional save. Opt-in browser migration leaves the original browser copy unchanged. Invalid renovation references or financial data are rejected rather than silently cleared.
 
 ### Conditional saves
 

@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { StorageConflictError, StorageError } from "../storage.js";
+import { emptyRenovation } from "./helpers/renovation-fixture.js";
 
 const bootstrapModule = await import("../bootstrap.js").catch(() => null);
 assert.ok(bootstrapModule, "the startup state initializer must exist");
 const { initializeState } = bootstrapModule;
 
 const remoteState = {
+  ...emptyRenovation(),
   income: 5000,
   commitments: [{ id: "rent", name: "Rent", amount: 1000, everyMonths: 1 }],
   lifestyle: [],
@@ -14,6 +16,7 @@ const remoteState = {
   spending: [],
 };
 const legacyState = {
+  ...emptyRenovation(),
   income: 3000,
   commitments: [],
   lifestyle: [],
@@ -21,7 +24,7 @@ const legacyState = {
   spending: [],
 };
 const legacy = { status: "available", backup: "valid legacy backup", state: legacyState };
-const blankState = { income: 0, commitments: [], lifestyle: [], houses: [], spending: [] };
+const blankState = { ...emptyRenovation(), income: 0, commitments: [], lifestyle: [], houses: [], spending: [] };
 
 test("loaded remote data bypasses legacy browser storage", async () => {
   const storage = {

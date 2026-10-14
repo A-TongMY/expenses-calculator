@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exportBackup } from "../backup.js";
 import { createSessionCookie } from "../netlify/functions/_shared/auth.js";
+import { emptyRenovation } from "./helpers/renovation-fixture.js";
 
 const stateModule = await import("../netlify/functions/state.js").catch(() => null);
 assert.ok(stateModule, "the authenticated state handler must exist");
@@ -15,6 +16,7 @@ const { createBlobStateStore, StateConflictError } = storeModule;
 const allowedUser = async () => 45504842;
 const expectedOrigin = "https://expenses.example";
 const validBackup = exportBackup({
+  ...emptyRenovation(),
   income: 0,
   commitments: [],
   lifestyle: [],
@@ -168,12 +170,15 @@ test("GET upgrades v6 in memory and preserves the original ETag for a conditiona
   const upgraded = JSON.parse(body.backup);
 
   assert.equal(response.status, 200);
-  assert.equal(upgraded.schemaVersion, 7);
+  assert.equal(upgraded.schemaVersion, 8);
   assert.deepEqual(Object.keys(upgraded.data).sort(), [
     "commitments",
     "houses",
     "income",
     "lifestyle",
+    "renovationCategories",
+    "renovationItems",
+    "renovationPayments",
     "spending",
   ]);
   assert.deepEqual(upgraded.data.spending, []);
@@ -199,6 +204,39 @@ test("GET reports absence only when the blob store returns null", async () => {
 
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: "state_not_found" });
+});
+
+test("GET upgrades schema 7 Spending without writes and preserves its ETag for saving", async () => {
+  const spending = [{
+    id: "s1", date: "2026-10-13", categoryId: "food", amount: 12.5, description: "Lunch",
+  }];
+  const backup = JSON.stringify({
+    schemaVersion: 7,
+    data: {
+      income: 5000, commitments: [], houses: [],
+      lifestyle: [{ id: "food", name: "Food", low: 400, high: 600, everyMonths: 1 }],
+      spending,
+    },
+  });
+  const store = fakeStore({ backup, etag: '"schema7-etag"' });
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const response = await handler(getStateRequest());
+  const body = await response.json();
+  const upgraded = JSON.parse(body.backup);
+  assert.equal(response.status, 200);
+  assert.equal(upgraded.schemaVersion, 8);
+  assert.deepEqual(upgraded.data.spending, spending);
+  assert.deepEqual(upgraded.data.renovationCategories, []);
+  assert.deepEqual(upgraded.data.renovationItems, []);
+  assert.deepEqual(upgraded.data.renovationPayments, []);
+  assert.equal(body.notice, null);
+  assert.equal(store.writeCalls.length, 0);
+  assert.equal(response.headers.get("etag"), '"schema7-etag"');
+  const saved = await handler(putRequest(body.backup, {
+    writeCondition: { etag: response.headers.get("etag") },
+  }));
+  assert.equal(saved.status, 200);
+  assert.deepEqual(store.writeCalls[0].conditions, { etag: '"schema7-etag"' });
 });
 
 test("invalid stored state is a server error rather than an empty store", async () => {

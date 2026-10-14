@@ -4,6 +4,9 @@ import { expenseReport, housesReport } from "./reports.js";
 import { el, icon } from "./ui.js";
 import { spendingReport } from "./spending.js";
 import { renderSpendingSummary } from "./spending-summary.js";
+import { renovationReport } from "./renovation.js";
+import { renovationMonth } from "./renovation-calendar.js";
+import { renderRenovationSummary } from "./renovation-summary.js";
 
 const percent = (share) => `${Math.round(share * 100)}%`;
 
@@ -229,6 +232,20 @@ export function setupHome({ getState }) {
     expenses.replaceChildren(...expenseCards(expenseReport(state, month), month));
     houses.replaceChildren(...houseCards(housesReport(state.houses, month)));
     renderSpendingSummary(document.getElementById("home-spending"), spendingReport(state, month));
+    const panels = state.houses.filter((house) =>
+      state.renovationItems.some((item) => item.houseId === house.id)).map((house) => {
+      const panel = el("details", "panel");
+      panel.open = true;
+      const heading = el("summary");
+      const link = el("a", "open-link", "Open Renovation");
+      link.href = `#/renovation?house=${encodeURIComponent(house.id)}`;
+      heading.append(el("span", "title", `Renovation / ${house.name}`), link);
+      const content = el("div", "panel-body cards");
+      renderRenovationSummary(content, renovationReport(state, house.id, renovationMonth()));
+      panel.append(heading, content);
+      return panel;
+    });
+    document.getElementById("home-renovation").replaceChildren(...panels);
   }
 
   return { render };

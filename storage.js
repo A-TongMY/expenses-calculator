@@ -1,4 +1,4 @@
-import { exportBackup, importBackup } from "./backup.js";
+import { exportBackup, readBackup } from "./backup.js";
 
 export const STORAGE_KEY = "expenses-calculator";
 
@@ -34,8 +34,8 @@ const parseResponseJson = async (response) => {
 
 const validatedBackup = (value) => {
   try {
-    const state = typeof value === "string" ? importBackup(value) : importBackup(exportBackup(value));
-    return { state, backup: exportBackup(state) };
+    const { state, notice } = readBackup(typeof value === "string" ? value : exportBackup(value));
+    return { state, backup: exportBackup(state), notice };
   } catch {
     throw new StorageError("The expense data is not a valid backup.");
   }
@@ -98,8 +98,12 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
       }
       const etag = response.headers.get("etag");
       if (!etag) throw new StorageError("The remote service returned no state version.");
-      const { state } = validatedBackup(body.backup);
-      return { status: "loaded", state, etag };
+      const { state, notice } = validatedBackup(body.backup);
+      if (body.notice != null && typeof body.notice !== "string") {
+        throw new StorageError("The remote service returned an invalid upgrade notice.");
+      }
+      const upgradeNotice = body.notice ?? notice;
+      return { status: "loaded", state, etag, ...(upgradeNotice ? { notice: upgradeNotice } : {}) };
     },
 
     async saveState(state, etag) {
@@ -135,7 +139,8 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
         };
       }
       try {
-        return { status: "available", backup: saved, state: importBackup(saved) };
+        const { state, notice } = readBackup(saved);
+        return { status: "available", backup: saved, state, ...(notice ? { notice } : {}) };
       } catch {
         return {
           status: "invalid",
@@ -147,7 +152,12 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
     async migrateLegacyState(backup) {
       const validated = validatedBackup(backup);
       const etag = await writeBackup(validated.backup, { "If-None-Match": "*" });
-      return { status: "migrated", state: validated.state, etag };
+      return {
+        status: "migrated",
+        state: validated.state,
+        etag,
+        ...(validated.notice ? { notice: validated.notice } : {}),
+      };
     },
   };
 }

@@ -10,8 +10,8 @@ const state = (income) => ({
   income,
   commitments: [],
   lifestyle: [],
-  checkIns: [],
   houses: [],
+  spending: [],
 });
 
 test("rapid queued changes coalesce to the newest snapshot", async () => {

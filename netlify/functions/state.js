@@ -1,5 +1,5 @@
 import { getStore } from "@netlify/blobs";
-import { exportBackup, importBackup } from "../../backup.js";
+import { exportBackup, importBackup, readBackup } from "../../backup.js";
 import { readSessionCookie } from "./_shared/auth.js";
 import { createBlobStateStore, StateConflictError } from "./_shared/blob-state-store.js";
 
@@ -133,12 +133,15 @@ export function createStateHandler({
         return jsonResponse(500, { error: "stored_state_invalid" });
       }
       let backup;
+      let notice;
       try {
-        backup = exportBackup(importBackup(stored.backup));
+        const result = readBackup(stored.backup);
+        backup = exportBackup(result.state);
+        notice = result.notice;
       } catch {
         return jsonResponse(500, { error: "stored_state_invalid" });
       }
-      return jsonResponse(200, { backup }, { etag: stored.etag });
+      return jsonResponse(200, { backup, notice }, { etag: stored.etag });
     }
 
     if (request.headers.get("origin") !== expectedOrigin) {

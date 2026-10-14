@@ -6,12 +6,14 @@ import {
   isValidCommitment,
   isValidHouse,
   isValidLifestyle,
+  isValidSpending,
 } from "./rules.js";
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const LIFESTYLE_SINCE = 2;
 const CHECK_INS_SINCE = 5;
 const HOUSES_SINCE = 6;
+const SPENDING_FIELDS = ["id", "date", "categoryId", "amount", "description"];
 
 const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth", "scenario"];
 const LIFESTYLE_FIELDS = ["id", "name", "low", "high", "everyMonths", "startMonth", "endMonth"];
@@ -26,6 +28,10 @@ const toCommitment = (item) => {
   return commitment.scenario ? { ...commitment, scenario: { on: commitment.scenario.on } } : commitment;
 };
 
+const toLifestyle = (item) => pick(item, LIFESTYLE_FIELDS);
+const toHouse = (item) => pick(item, HOUSE_FIELDS);
+const toSpending = (item) => pick(item, SPENDING_FIELDS);
+
 const isValidList = (items, isValid, keyOf = (item) => item.id, limit = MAX_ITEMS) =>
   Array.isArray(items) &&
   items.length <= limit &&
@@ -38,22 +44,64 @@ const checkInKey = ({ month, itemId }) => `${month}|${itemId}`;
 const upgrade = (data, version) => ({
   ...data,
   lifestyle: version < LIFESTYLE_SINCE ? [] : data?.lifestyle,
-  checkIns: version < CHECK_INS_SINCE ? [] : data?.checkIns,
+  checkIns: version < CHECK_INS_SINCE || version >= SCHEMA_VERSION ? [] : data?.checkIns,
   houses: version < HOUSES_SINCE ? [] : data?.houses,
+  spending: version < SCHEMA_VERSION ? [] : data?.spending,
 });
 
-const isState = (data) =>
+const isLegacyState = (data) =>
   isMoney(data.income) &&
   isValidList(data.commitments, isValidCommitment) &&
   isValidList(data.lifestyle, isValidLifestyle) &&
   isValidList(data.checkIns, isValidCheckIn, checkInKey) &&
   isValidList(data.houses, isValidHouse, undefined, MAX_HOUSES);
 
+const isCurrentState = (data) =>
+  isMoney(data.income) &&
+  isValidList(data.commitments, isValidCommitment) &&
+  isValidList(data.lifestyle, isValidLifestyle) &&
+  isValidList(data.houses, isValidHouse, undefined, MAX_HOUSES) &&
+  isValidList(
+    data.spending,
+    (entry) => isValidSpending(entry, data.lifestyle),
+    undefined,
+    MAX_ITEMS,
+  );
+
+const toCurrentState = (data) => ({
+  income: data.income,
+  commitments: data.commitments.map(toCommitment),
+  lifestyle: data.lifestyle.map(toLifestyle),
+  houses: data.houses.map(toHouse),
+  spending: data.spending.map(toSpending),
+});
+
+const toLegacyState = (data) => ({
+  income: data.income,
+  commitments: data.commitments.map(toCommitment),
+  lifestyle: data.lifestyle.map(toLifestyle),
+  houses: data.houses.map(toHouse),
+  spending: [],
+});
+
 export function exportBackup(state) {
-  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, data: state }, null, 2);
+  return JSON.stringify(
+    {
+      schemaVersion: SCHEMA_VERSION,
+      data: {
+        income: state.income,
+        commitments: Array.isArray(state.commitments) ? state.commitments.map(toCommitment) : [],
+        lifestyle: Array.isArray(state.lifestyle) ? state.lifestyle.map(toLifestyle) : [],
+        houses: Array.isArray(state.houses) ? state.houses.map(toHouse) : [],
+        spending: Array.isArray(state.spending) ? state.spending.map(toSpending) : [],
+      },
+    },
+    null,
+    2,
+  );
 }
 
-export function importBackup(file) {
+export function readBackup(file) {
   let parsed;
   try {
     parsed = JSON.parse(file);
@@ -67,16 +115,26 @@ export function importBackup(file) {
     );
   }
   const data = upgrade(parsed?.data, version);
-  if (!Number.isInteger(version) || version < 1 || !isState(data)) {
+  if (!Number.isInteger(version) || version < 1 || !isLegacyState(data)) {
     throw new Error(
       "This file is not a valid backup: the data is not in the expected shape.",
     );
   }
-  return {
-    income: data.income,
-    commitments: data.commitments.map(toCommitment),
-    lifestyle: data.lifestyle.map((item) => pick(item, LIFESTYLE_FIELDS)),
-    checkIns: data.checkIns.map((item) => pick(item, CHECK_IN_FIELDS)),
-    houses: data.houses.map((item) => pick(item, HOUSE_FIELDS)),
-  };
+  if (version < SCHEMA_VERSION) {
+    const notice =
+      Array.isArray(data.checkIns) && data.checkIns.length > 0
+        ? "Older check-ins were removed from the remote copy."
+        : null;
+    return { state: toLegacyState(data), notice };
+  }
+  if (!isCurrentState(data)) {
+    throw new Error(
+      "This file is not a valid backup: the data is not in the expected shape.",
+    );
+  }
+  return { state: toCurrentState(data), notice: null };
+}
+
+export function importBackup(file) {
+  return readBackup(file).state;
 }

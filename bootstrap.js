@@ -4,7 +4,7 @@ const blankState = () => ({
   income: 0,
   commitments: [],
   lifestyle: [],
-  checkIns: [],
+  spending: [],
   houses: [],
 });
 
@@ -26,7 +26,7 @@ export async function initializeState({ storage, confirmMigration = async () => 
     ) {
       throw new StorageError("The remote service returned an invalid loaded state.");
     }
-    return initialized(remote.state, remote.etag, false, null);
+    return initialized(remote.state, remote.etag, false, remote.notice ?? null);
   }
   if (remote.status !== "empty") {
     throw new StorageError("The remote service returned an invalid state result.");
@@ -57,7 +57,7 @@ export async function initializeState({ storage, confirmMigration = async () => 
       ) {
         throw new StorageError("The migration did not return a valid remote state.");
       }
-      return initialized(migration.state, migration.etag, true, legacy.notice ?? null);
+      return initialized(migration.state, migration.etag, true, migration.notice ?? legacy.notice ?? null);
     } catch (error) {
       if (!(error instanceof StorageConflictError)) throw error;
       const winner = await storage.loadState();
@@ -74,7 +74,11 @@ export async function initializeState({ storage, confirmMigration = async () => 
         winner.state,
         winner.etag,
         false,
-        "Another device initialized the remote account first. Its state has been loaded.",
+        [
+          "Another device initialized the remote account first. Its state has been loaded.",
+          legacy.notice,
+          winner.notice,
+        ].filter(Boolean).join(" "),
       );
     }
   }

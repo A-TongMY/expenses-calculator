@@ -18,8 +18,19 @@ const validBackup = exportBackup({
   income: 0,
   commitments: [],
   lifestyle: [],
-  checkIns: [],
   houses: [],
+  spending: [],
+});
+
+const legacyV6Backup = JSON.stringify({
+  schemaVersion: 6,
+  data: {
+    income: 5000,
+    commitments: [],
+    lifestyle: [{ id: "food", name: "Food", low: 400, high: 600, everyMonths: 1 }],
+    checkIns: [{ month: "2026-10", itemId: "food", name: "Food", low: 400, high: 600, actual: 480 }],
+    houses: [],
+  },
 });
 
 function fakeStore({ backup = null, etag = '"v1"', conflict = false } = {}) {
@@ -144,9 +155,38 @@ test("GET returns a validated stored backup and its ETag", async () => {
   const response = await handler(getStateRequest());
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { backup: validBackup });
+  assert.deepEqual(await response.json(), { backup: validBackup, notice: null });
   assert.equal(response.headers.get("etag"), '"v7"');
   assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
+test("GET upgrades v6 in memory and preserves the original ETag for a conditional save", async () => {
+  const store = fakeStore({ backup: legacyV6Backup, etag: '"legacy-etag"' });
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const response = await handler(getStateRequest());
+  const body = await response.json();
+  const upgraded = JSON.parse(body.backup);
+
+  assert.equal(response.status, 200);
+  assert.equal(upgraded.schemaVersion, 7);
+  assert.deepEqual(Object.keys(upgraded.data).sort(), [
+    "commitments",
+    "houses",
+    "income",
+    "lifestyle",
+    "spending",
+  ]);
+  assert.deepEqual(upgraded.data.spending, []);
+  assert.match(body.notice, /check-in/i);
+  assert.equal(response.headers.get("etag"), '"legacy-etag"');
+  assert.equal(store.writeCalls.length, 0);
+
+  const save = await handler(
+    putRequest(body.backup, { ifMatch: response.headers.get("etag") }),
+  );
+
+  assert.equal(save.status, 200);
+  assert.deepEqual(store.writeCalls[0].conditions, { etag: '"legacy-etag"' });
 });
 
 test("GET reports absence only when the blob store returns null", async () => {
@@ -192,6 +232,32 @@ test("malformed, invalid, and newer-schema backups are rejected before a write",
   assert.equal(invalid.status, 400);
   assert.equal(newer.status, 400);
   assert.equal(store.writeCalls.length, 0);
+});
+
+test("invalid version 7 Spending data is rejected before the store changes", async () => {
+  const store = fakeStore();
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const invalid = JSON.stringify({
+    schemaVersion: 7,
+    data: {
+      income: 0,
+      commitments: [],
+      lifestyle: [],
+      houses: [],
+      spending: [{
+        id: "s1",
+        date: "2026-10-13",
+        categoryId: "missing",
+        amount: 10,
+        description: "Lunch",
+      }],
+    },
+  });
+  const response = await handler(putRequest(invalid, { ifNoneMatch: true }));
+
+  assert.equal(response.status, 400);
+  assert.equal(store.writeCalls.length, 0);
+  assert.equal(store.currentBackup, null);
 });
 
 test("oversized backup payloads are rejected before a write", async () => {

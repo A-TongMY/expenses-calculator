@@ -16,8 +16,8 @@ const validState = {
   income: 0,
   commitments: [],
   lifestyle: [],
-  checkIns: [],
   houses: [],
+  spending: [],
 };
 const validBackup = exportBackup(validState);
 
@@ -49,6 +49,22 @@ test("loadState returns validated remote data and its ETag", async () => {
     status: "loaded",
     state: validState,
     etag: '"v1"',
+  });
+});
+
+test("loadState propagates the remote upgrade notice without changing the ETag", async () => {
+  const notice = "Older check-ins were removed; other saved data was kept.";
+  const client = createStorageClient({
+    fetchImpl: async () =>
+      responseJson({ backup: validBackup, notice }, 200, { etag: '"v1"' }),
+    storage: memoryStorage(),
+  });
+
+  assert.deepEqual(await client.loadState(), {
+    status: "loaded",
+    state: validState,
+    etag: '"v1"',
+    notice,
   });
 });
 
@@ -167,11 +183,30 @@ test("invalid legacy backup content is not offered for migration", () => {
     fetchImpl: async () => responseJson({}),
     storage: memoryStorage(new Map([[STORAGE_KEY, "invalid"]])),
   });
+  const result = client.loadLegacyState();
+  assert.equal(result.status, "invalid");
+  assert.match(result.notice, /not a valid expense backup/i);
+});
+
+test("legacy backup upgrade notices propagate while retaining the original browser value", () => {
+  const legacyBackup = JSON.stringify({
+    schemaVersion: 6,
+    data: {
+      income: 100,
+      commitments: [],
+      lifestyle: [],
+      checkIns: [{ month: "2026-10", itemId: "food", name: "Food", low: 1, high: 2, actual: 1 }],
+      houses: [],
+    },
+  });
+  const storage = memoryStorage(new Map([[STORAGE_KEY, legacyBackup]]));
+  const client = createStorageClient({ fetchImpl: async () => responseJson({}), storage });
 
   const result = client.loadLegacyState();
 
-  assert.equal(result.status, "invalid");
-  assert.match(result.notice, /not a valid expense backup/i);
+  assert.equal(result.status, "available");
+  assert.match(result.notice, /check-in/i);
+  assert.equal(storage.getItem(STORAGE_KEY), legacyBackup);
 });
 
 test("blocked local storage is reported as unavailable", () => {

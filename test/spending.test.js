@@ -38,6 +38,24 @@ test("deleting the last recorded category entry restores its estimates", () => {
   assert.equal(projection(deleted, "2026-10")[0].lifestyle.high, 680);
 });
 
+test("editing dates and categories changes filtered reports without losing the entry", () => {
+  const recorded = spending.saveSpendingEntry(state, lunch);
+  const edited = spending.saveSpendingEntry(recorded, {
+    ...lunch, date: "2026-11-01", categoryId: "transport",
+  });
+  assert.equal(spending.spendingReport(edited, "2026-10", "food").count, 0);
+  assert.equal(spending.spendingReport(edited, "2026-11", "transport").total, 12.5);
+  assert.equal(edited.spending.length, 1);
+  assert.equal(recorded.spending[0].date, "2026-10-13");
+});
+
+test("all-category Home report remains independent of a filtered Spending report", () => {
+  const recorded = { ...state, spending: [lunch, { ...lunch, id: "s2", categoryId: "transport", amount: 30 }] };
+  assert.equal(spending.spendingReport(recorded, "2026-10", "food").total, 12.5);
+  assert.equal(spending.spendingReport(recorded, "2026-10").total, 42.5);
+  assert.deepEqual(recorded.spending.map(({ amount }) => amount), [12.5, 30]);
+});
+
 test("saving entries is immutable and editing retains identity", () => {
   const saved = spending.saveSpendingEntry(state, lunch);
   const edited = spending.saveSpendingEntry(saved, { ...lunch, amount: 15 });

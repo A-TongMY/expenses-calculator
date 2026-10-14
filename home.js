@@ -2,6 +2,8 @@ import { lineChart, meterBar, rangeDots, segmentBar, stackedBars } from "./chart
 import { currentMonth, money, monthLabel, range } from "./format.js";
 import { expenseReport, housesReport } from "./reports.js";
 import { el, icon } from "./ui.js";
+import { spendingReport } from "./spending.js";
+import { renderSpendingSummary } from "./spending-summary.js";
 
 const percent = (share) => `${Math.round(share * 100)}%`;
 
@@ -65,6 +67,7 @@ function expenseCards(report, month) {
       stat("Left", range(report.left.worst, report.left.best), `hero${report.left.worst < 0 ? " negative" : ""}`),
       stat("Income", money.format(report.income)),
       spentTile,
+      stat(`Lifestyle · ${report.lifestyle.source}`, range(report.lifestyle.low, report.lifestyle.high)),
       tightest,
     ),
   );
@@ -125,15 +128,15 @@ function expenseCards(report, month) {
   }
   if (costParts.length > 0) cards.push(card("Where income goes", ...costParts));
 
-  if (report.checkIns.length > 0) {
+  if (report.actuals.length > 0) {
     const counts = { over: 0, within: 0, under: 0 };
-    for (const entry of report.checkIns) counts[entry.kind] += 1;
+    for (const entry of report.actuals) counts[entry.kind] += 1;
     cards.push(
       card(
-        "Check-ins",
+        "Actual vs estimate",
         rangeDots({
-          labels: report.checkIns.map((entry) => monthLabel(entry.month)),
-          items: report.checkIns,
+          labels: report.actuals.map((entry) => monthLabel(entry.month)),
+          items: report.actuals,
           label: "Spent against the estimate, by month",
         }),
         legend([
@@ -225,6 +228,7 @@ export function setupHome({ getState }) {
     const month = currentMonth();
     expenses.replaceChildren(...expenseCards(expenseReport(state, month), month));
     houses.replaceChildren(...houseCards(housesReport(state.houses, month)));
+    renderSpendingSummary(document.getElementById("home-spending"), spendingReport(state, month));
   }
 
   return { render };

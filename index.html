@@ -65,6 +65,7 @@
         </svg>
       </a>
       <a href="#/expenses" data-nav="expenses"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg><span>Expenses</span></a>
+      <a href="#/spending" data-nav="spending"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>Spending</span></a>
       <a href="#/houses" data-nav="houses"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Houses</span></a>
       <span class="account-controls">
         <span id="account-label">A-TongMY</span>
@@ -86,6 +87,7 @@
     <div class="save-recovery" id="save-recovery" hidden>
       <p id="save-recovery-message"></p>
       <button id="retry-save-button" class="secondary" type="button">Retry save</button>
+      <button id="save-recovery-export" class="secondary" type="button">Export my current edits</button>
     </div>
 
     <div id="page-home">
@@ -96,6 +98,21 @@
       <details class="panel" data-panel="home-houses" open>
         <summary><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span class="title">Houses</span><a class="open-link" href="#/houses" aria-label="Open Houses"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
         <div class="panel-body cards" id="home-houses"></div>
+      </details>
+      <details class="panel" data-panel="home-spending" open>
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span class="title">Spending</span><a class="open-link" href="#/spending" aria-label="Open Spending"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body cards" id="home-spending"></div>
+      </details>
+      <details class="panel" data-panel="backup">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span class="title">Backup</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+        <div class="panel-body">
+          <div class="actions">
+            <button type="button" id="export-button" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export</button>
+            <button type="button" id="import-button" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Import</button>
+            <input id="import-file" type="file" accept="application/json,.json" autocomplete="off" hidden>
+          </div>
+          <p id="backup-message" class="hint" role="status"></p>
+        </div>
       </details>
     </div>
 
@@ -120,7 +137,7 @@
             <dd id="total-commitments">RM 0.00</dd>
           </div>
           <div class="stat">
-            <dt>Lifestyle</dt>
+            <dt>Lifestyle <span id="lifestyle-source" class="chip">Estimate</span></dt>
             <dd id="total-lifestyle">RM 0.00</dd>
           </div>
         </dl>
@@ -251,42 +268,36 @@
         </div>
       </details>
 
-      <details class="panel" data-panel="checkins">
-        <summary><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span class="title">Check-ins</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
-        <div class="panel-body">
-          <p class="empty" id="checkin-no-lifestyle" hidden>Add lifestyle spending first</p>
-          <form id="checkin-form" autocomplete="off">
-            <div class="pair">
-              <label class="field">
-                <span>Month</span>
-                <input name="month" type="month" required pattern="\d{4}-\d{2}" placeholder="YYYY-MM" autocomplete="off">
-              </label>
-              <label class="field">
-                <span>Item</span>
-                <select name="item" required></select>
-              </label>
-            </div>
-            <label class="field">
-              <span>Spent (MYR)</span>
-              <input name="actual" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" autocomplete="off">
-            </label>
-            <p class="hint" id="checkin-hint"></p>
-            <div class="actions">
-              <button type="submit" id="checkin-submit">Save</button>
-            </div>
-          </form>
-          <p class="empty" id="checkin-empty">Nothing yet</p>
-          <div class="table-wrap">
-            <table class="data-table" id="checkin-table" hidden>
-              <thead>
-                <tr><th scope="col">Month</th><th scope="col">Item</th><th scope="col">Estimate</th><th scope="col">Spent</th><th scope="col">Gap</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
-              </thead>
-              <tbody id="checkin-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </details>
+    </div>
 
+    <div id="page-spending" hidden>
+      <section class="overview" aria-labelledby="spending-heading">
+        <h1 id="spending-heading">Spending</h1>
+        <div class="pair">
+          <label class="field"><span>Month</span><input id="spending-month" type="month" required min="1900-01" max="9999-12"></label>
+          <label class="field"><span>Category filter</span><select id="spending-category-filter"></select></label>
+        </div>
+        <div id="spending-summary" class="cards"></div>
+      </section>
+      <section class="overview" aria-label="Spending entries">
+        <p id="spending-no-categories" class="empty" hidden><a href="#/expenses">Add a Lifestyle category in Expenses</a></p>
+        <form id="spending-form" autocomplete="off">
+          <div class="pair">
+            <label class="field"><span>Date</span><input name="date" type="date" required min="1900-01-01" max="9999-12-31"></label>
+            <label class="field"><span>Category</span><select name="categoryId" required></select></label>
+          </div>
+          <label class="field"><span>Amount (MYR)</span><input name="amount" type="number" required min="0.01" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+          <label class="field"><span>Description</span><input name="description" type="text" required maxlength="500"></label>
+          <div class="actions">
+            <button type="submit" id="spending-submit"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add</button>
+            <button type="button" id="spending-cancel" class="secondary" hidden>Cancel</button>
+          </div>
+        </form>
+        <p id="spending-message" class="hint" role="status" aria-live="polite"></p>
+        <ul id="spending-list" class="items spending-items"></ul>
+        <p id="spending-empty" class="empty">No entries for these filters</p>
+        <p id="spending-total" class="note"></p>
+      </section>
     </div>
 
     <div id="page-houses" hidden>
@@ -362,18 +373,6 @@
             </form>
           </details>
     </div>
-
-      <details class="panel" data-panel="backup">
-        <summary><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span class="title">Backup</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
-        <div class="panel-body">
-          <div class="actions">
-            <button type="button" id="export-button" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export</button>
-            <button type="button" id="import-button" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Import</button>
-            <input id="import-file" type="file" accept="application/json,.json" autocomplete="off" hidden>
-          </div>
-          <p id="backup-message" class="hint" role="status"></p>
-        </div>
-      </details>
 
   </main>
   </div>

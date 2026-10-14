@@ -13,6 +13,10 @@ test("publishes only the browser asset allowlist", async (t) => {
   const { PUBLIC_FILES } = filesModule;
   assert.ok(PUBLIC_FILES.includes("bootstrap.js"));
   assert.ok(PUBLIC_FILES.includes("persistence.js"));
+  assert.ok(PUBLIC_FILES.includes("spending.js"));
+  assert.ok(PUBLIC_FILES.includes("spending-ui.js"));
+  assert.ok(PUBLIC_FILES.includes("spending-summary.js"));
+  assert.ok(!PUBLIC_FILES.includes("checkins.js"));
 
   const root = await mkdtemp(join(tmpdir(), "expenses-source-"));
   const output = join(root, "dist");

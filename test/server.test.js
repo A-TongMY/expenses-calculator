@@ -36,7 +36,9 @@ const publicFiles = {
   "/rules.js": /^text\/javascript/,
   "/format.js": /^text\/javascript/,
   "/storage.js": /^text\/javascript/,
-  "/checkins.js": /^text\/javascript/,
+  "/spending.js": /^text\/javascript/,
+  "/spending-ui.js": /^text\/javascript/,
+  "/spending-summary.js": /^text\/javascript/,
   "/loan.js": /^text\/javascript/,
   "/houses.js": /^text\/javascript/,
   "/ui.js": /^text\/javascript/,
@@ -57,6 +59,7 @@ for (const [path, contentType] of Object.entries(publicFiles)) {
 }
 
 const privatePaths = [
+  "/checkins.js",
   "/server.js",
   "/netlify/functions/state.js",
   "/package.json",

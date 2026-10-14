@@ -1,7 +1,8 @@
 import { lifestyleMonthlyCost, monthlyCost, projection, tightestMonth } from "./calc.js";
-import { importBackup, exportBackup } from "./backup.js";
+import { readBackup, exportBackup } from "./backup.js";
 import { initializeState } from "./bootstrap.js";
-import { setupCheckIns } from "./checkins.js";
+import { setupSpending } from "./spending-ui.js";
+import { assertLifestyleChangeAllowed } from "./spending.js";
 import { setupHome } from "./home.js";
 import { setupHouses } from "./houses.js";
 import { createSaveQueue } from "./persistence.js";
@@ -52,6 +53,7 @@ const els = {
   commitmentsLabel: $("commitments-label"),
   totalCommitments: $("total-commitments"),
   totalLifestyle: $("total-lifestyle"),
+  lifestyleSource: $("lifestyle-source"),
   remainingLabel: $("remaining-label"),
   remaining: $("remaining"),
   remainingHint: $("remaining-hint"),
@@ -87,7 +89,7 @@ function showNotice(message) {
 }
 
 const storage = createStorageClient();
-let state = { income: 0, commitments: [], lifestyle: [], checkIns: [], houses: [] };
+let state = { income: 0, commitments: [], lifestyle: [], spending: [], houses: [] };
 let etag = null;
 let saveQueue = null;
 let startupNotice = null;
@@ -279,8 +281,17 @@ function createSection(root, key, config) {
   function remove(id) {
     const item = find(id);
     if (!item || !confirm(`Delete "${item.name}"?`)) return;
+    const next = { ...state, [key]: state[key].filter((other) => other.id !== id) };
+    if (key === "lifestyle") {
+      try {
+        assertLifestyleChangeAllowed(state, next.lifestyle);
+      } catch (error) {
+        showNotice(error.message);
+        return;
+      }
+    }
     if (editingId === id) reset();
-    commit({ ...state, [key]: state[key].filter((other) => other.id !== id) });
+    commit(next);
   }
 
   function replaceItem(id, change) {
@@ -392,6 +403,15 @@ function createSection(root, key, config) {
       form.reportValidity();
       return;
     }
+    if (key === "lifestyle") {
+      try {
+        assertLifestyleChangeAllowed(state, next.lifestyle);
+      } catch (error) {
+        field("endMonth").setCustomValidity(error.message);
+        form.reportValidity();
+        return;
+      }
+    }
     reset();
     commit(next);
     field("name").focus();
@@ -405,7 +425,7 @@ const sections = Object.entries(SECTIONS).map(([key, config]) =>
   createSection(document.querySelector(`[data-kind="${key}"]`), key, config),
 );
 
-const checkIns = setupCheckIns({ getState: () => state, commit });
+const spending = setupSpending({ getState: () => state, commit, newId });
 const houses = setupHouses({ getState: () => state, commit, newId });
 const home = setupHome({ getState: () => state });
 
@@ -440,6 +460,7 @@ function renderOverview() {
   els.commitmentsLabel.textContent = "Commitments";
   els.totalCommitments.textContent = money.format(commitments);
   els.totalLifestyle.textContent = range(lifestyle.low, lifestyle.high);
+  els.lifestyleSource.textContent = lifestyle.source[0].toUpperCase() + lifestyle.source.slice(1);
   els.remainingLabel.textContent = showScenarios ? "Left · baseline" : "Left";
   els.remaining.textContent = range(worst, best);
   els.remainingHint.hidden = worst === best;
@@ -484,7 +505,7 @@ function renderAll() {
   shownMonth = currentMonth();
   renderOverview();
   for (const section of sections) section.render();
-  checkIns.render();
+  spending.render();
   houses.render();
   home.render();
 }
@@ -563,7 +584,7 @@ async function initializeApp() {
   }
 }
 
-const PAGES = ["home", "expenses", "houses"];
+const PAGES = ["home", "expenses", "spending", "houses"];
 
 function showPage() {
   if (!appReady) return;
@@ -577,6 +598,7 @@ function showPage() {
   }
   // Income changes on the Expenses page, so the dashboard is redrawn whenever it is shown.
   if (page === "home") home.render();
+  if (page === "spending") spending.render();
 }
 
 window.addEventListener("hashchange", () => {
@@ -590,7 +612,7 @@ els.income.addEventListener("input", () => {
   // Silently capped at the largest amount a backup can hold.
   state = { ...state, income: Number.isFinite(value) && value > 0 ? Math.min(value, MAX_AMOUNT) : 0 };
   persist();
-  renderOverview();
+  renderAll();
 });
 
 els.income.addEventListener("change", syncIncomeField);
@@ -661,6 +683,7 @@ async function reloadRemoteVersion() {
       throw new StorageError("The remote version is no longer available.");
     }
     state = remote.state;
+    startupNotice = remote.notice ?? null;
     etag = remote.etag;
     saveQueue.reset(etag);
     hasUnsavedChanges = false;
@@ -715,6 +738,7 @@ els.retryStartup.addEventListener("click", () => void initializeApp());
 els.retrySaveButton.addEventListener("click", () => void retrySave());
 els.reloadRemoteButton.addEventListener("click", () => void reloadRemoteVersion());
 els.exportUnsavedButton.addEventListener("click", exportCurrentState);
+$("save-recovery-export").addEventListener("click", exportCurrentState);
 els.authExportButton.addEventListener("click", exportCurrentState);
 els.exportButton.addEventListener("click", exportCurrentState);
 els.logoutButton.addEventListener("click", () => void signOut());
@@ -731,7 +755,7 @@ els.importFile.addEventListener("change", async () => {
   }
   let imported;
   try {
-    imported = importBackup(await file.text());
+    imported = readBackup(await file.text());
   } catch (error) {
     showBackupMessage(error.message);
     return;
@@ -740,16 +764,17 @@ els.importFile.addEventListener("change", async () => {
     showBackupMessage("Cancelled.");
     return;
   }
-  state = imported;
+  state = imported.state;
+  startupNotice = imported.notice;
   persist();
   syncIncomeField();
   for (const section of sections) section.reset();
   houses.reset();
+  spending.reset();
   renderAll();
-  checkIns.syncForm();
   try {
     await saveQueue.flush();
-    showBackupMessage("Imported and saved to your account.");
+    showBackupMessage(["Imported and saved to your account.", imported.notice].filter(Boolean).join(" "));
   } catch {
     showBackupMessage("Imported in this tab, but not saved. Export a backup to keep your changes.");
   }

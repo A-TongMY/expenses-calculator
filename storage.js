@@ -63,14 +63,16 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
     }
   };
 
-  const writeBackup = async (backup, condition) => {
+  const writeBackup = async (backup, writeCondition) => {
     const response = await requestState({
       method: "PUT",
       headers: {
         "content-type": "application/json",
-        ...condition,
+        ...(writeCondition.onlyIfNew
+          ? { "If-None-Match": "*" }
+          : { "If-Match": writeCondition.etag }),
       },
-      body: JSON.stringify({ backup }),
+      body: JSON.stringify({ backup, writeCondition }),
     });
     if (response.status === 401) throw new AuthRequiredError();
     if (response.status === 409) throw new StorageConflictError();
@@ -112,7 +114,7 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
       }
       const { backup } = validatedBackup(state);
       const condition =
-        etag === null || etag === undefined ? { "If-None-Match": "*" } : { "If-Match": etag };
+        etag === null || etag === undefined ? { onlyIfNew: true } : { etag };
       return writeBackup(
         backup,
         condition,
@@ -151,7 +153,7 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
 
     async migrateLegacyState(backup) {
       const validated = validatedBackup(backup);
-      const etag = await writeBackup(validated.backup, { "If-None-Match": "*" });
+      const etag = await writeBackup(validated.backup, { onlyIfNew: true });
       return {
         status: "migrated",
         state: validated.state,

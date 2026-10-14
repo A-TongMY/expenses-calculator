@@ -69,7 +69,7 @@ function fakeStore({ backup = null, etag = '"v1"', conflict = false } = {}) {
 const getStateRequest = () => new Request(`${expectedOrigin}/api/state`);
 const putRequest = (
   backup,
-  { ifMatch, ifNoneMatch = false, origin = expectedOrigin, contentType = "application/json" } = {},
+  { ifMatch, ifNoneMatch = false, origin = expectedOrigin, contentType = "application/json", writeCondition } = {},
 ) => {
   const headers = { "content-type": contentType };
   if (origin) headers.origin = origin;
@@ -78,7 +78,7 @@ const putRequest = (
   return new Request(`${expectedOrigin}/api/state`, {
     method: "PUT",
     headers,
-    body: JSON.stringify({ backup }),
+    body: JSON.stringify({ backup, ...(writeCondition !== undefined ? { writeCondition } : {}) }),
   });
 };
 
@@ -288,6 +288,70 @@ test("an update uses the caller's matching ETag", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(store.writeCalls[0].conditions, { etag: '"v1"' });
+});
+
+test("a JSON create condition is accepted without conditional HTTP headers", async () => {
+  const store = fakeStore();
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const response = await handler(putRequest(validBackup, { writeCondition: { onlyIfNew: true } }));
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("etag"), '"v2"');
+  assert.deepEqual(store.writeCalls[0].conditions, { onlyIfNew: true });
+});
+
+test("a JSON update condition is accepted without conditional HTTP headers", async () => {
+  const store = fakeStore({ backup: validBackup, etag: '"v1"' });
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const response = await handler(putRequest(validBackup, { writeCondition: { etag: '"v1"' } }));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(store.writeCalls[0].conditions, { etag: '"v1"' });
+});
+
+test("matching JSON and header conditions remain compatible", async () => {
+  const store = fakeStore();
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const response = await handler(putRequest(validBackup, {
+    ifNoneMatch: true,
+    writeCondition: { onlyIfNew: true },
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal(store.writeCalls.length, 1);
+});
+
+test("malformed JSON conditions are rejected even when a valid header exists", async () => {
+  const store = fakeStore();
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  for (const writeCondition of [
+    null, [], "", {}, { onlyIfNew: false }, { onlyIfNew: "true" },
+    { etag: "" }, { etag: "*" }, { etag: '"v1","v2"' }, { etag: 1 },
+    { etag: " " }, { etag: '"v1"\r\ninvalid' },
+    { onlyIfNew: true, etag: '"v1"' }, { onlyIfNew: true, extra: true },
+  ]) {
+    for (const ifNoneMatch of [false, true]) {
+      const response = await handler(putRequest(validBackup, { ifNoneMatch, writeCondition }));
+      assert.equal(response.status, 400, JSON.stringify(writeCondition));
+      assert.deepEqual(await response.json(), { error: "invalid_write_condition" });
+    }
+  }
+  assert.equal(store.writeCalls.length, 0);
+});
+
+test("conflicting JSON and header conditions never reach storage", async () => {
+  const store = fakeStore();
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  for (const options of [
+    { ifNoneMatch: true, writeCondition: { etag: '"v1"' } },
+    { ifMatch: '"v1"', writeCondition: { onlyIfNew: true } },
+    { ifMatch: '"v1"', writeCondition: { etag: '"v2"' } },
+  ]) {
+    const response = await handler(putRequest(validBackup, options));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "invalid_write_condition" });
+  }
+  assert.equal(store.writeCalls.length, 0);
 });
 
 test("a stale state update does not replace the existing blob", async () => {

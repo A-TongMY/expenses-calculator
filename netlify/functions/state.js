@@ -26,6 +26,19 @@ const jsonResponse = (status, body, extraHeaders = {}) =>
 
 const byteLength = (value) => Buffer.byteLength(value, "utf8");
 
+const isValidWriteCondition = (condition) => {
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) return false;
+  if (Object.keys(condition).length !== 1) return false;
+  if (condition.onlyIfNew === true) return true;
+  return (
+    typeof condition.etag === "string" &&
+    condition.etag.length > 0 &&
+    condition.etag.trim() === condition.etag &&
+    condition.etag !== "*" &&
+    !/[\r\n,]/.test(condition.etag)
+  );
+};
+
 async function readRequestJson(request) {
   const headerLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(headerLength) && headerLength > MAX_REQUEST_BYTES) {
@@ -179,19 +192,32 @@ export function createStateHandler({
 
     const ifMatch = request.headers.get("if-match");
     const ifNoneMatch = request.headers.get("if-none-match");
-    if (ifMatch && ifNoneMatch) {
+    if (ifMatch !== null && ifNoneMatch !== null) {
       return jsonResponse(400, { error: "invalid_write_condition" });
     }
     let conditions;
     if (ifNoneMatch !== null) {
       if (ifNoneMatch !== "*") return jsonResponse(400, { error: "invalid_write_condition" });
       conditions = { onlyIfNew: true };
-    } else if (ifMatch) {
-      if (ifMatch === "*" || ifMatch.includes(",")) {
+    } else if (ifMatch !== null) {
+      conditions = { etag: ifMatch };
+    }
+    if (conditions && !isValidWriteCondition(conditions)) {
+      return jsonResponse(400, { error: "invalid_write_condition" });
+    }
+    if (Object.hasOwn(payload, "writeCondition")) {
+      const bodyCondition = payload.writeCondition;
+      if (
+        !isValidWriteCondition(bodyCondition) ||
+        (conditions &&
+          (conditions.onlyIfNew !== bodyCondition.onlyIfNew ||
+            conditions.etag !== bodyCondition.etag))
+      ) {
         return jsonResponse(400, { error: "invalid_write_condition" });
       }
-      conditions = { etag: ifMatch };
-    } else {
+      conditions = bodyCondition;
+    }
+    if (!conditions) {
       return jsonResponse(428, { error: "write_condition_required" });
     }
 

@@ -64,6 +64,12 @@ Normal **Export** and **Import** actions are on Home only. Keep exported files p
 
 New backups use schema version 7 and include Spending. Supported older backups retain income, commitments, Lifestyle categories, and houses, initialize Spending empty, and deliberately discard old check-ins with a notice. Check-ins never become daily entries or actuals. Loading an older remote record upgrades it in memory without writing; its original ETag is retained for the next normal conditional save. Opt-in browser migration leaves the original browser copy unchanged.
 
+### Conditional saves
+
+`PUT /api/state` sends `{ backup, writeCondition }`. The condition is exactly `{ onlyIfNew: true }` for an empty account or `{ etag: "<last loaded or saved ETag>" }` for an update. It is carried in JSON so saves do not depend on an intermediary forwarding the standard `If-None-Match`/`If-Match` request headers. These headers are also sent for compatibility; the Function accepts header-only clients, but rejects conflicting or malformed conditions with `400 invalid_write_condition`. Requests with no condition return `428 write_condition_required`. All accepted saves still use atomic conditional Blobs writes, and competing creates or stale updates return `409 state_conflict`.
+
+If an import displays in the app but saving fails, the visible data is only in the current tab until a save succeeds. Export a recovery backup before refreshing. A `404 state_not_found` from GET is normal for an empty account; a failed PUT is not. Check its response status and error code in the browser Network panel without sharing backup contents or authentication cookies.
+
 ## Hosting support
 
 This repository supports deployment through Netlify, including its Functions and Blobs integration. GitHub Pages, Railway, and other static or server hosts do not provide the configured authentication and storage backend.

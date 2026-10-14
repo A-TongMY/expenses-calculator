@@ -134,7 +134,10 @@ test("saveState sends the validated backup and propagates its ETag", async () =>
   assert.equal(request.options.credentials, "same-origin");
   assert.equal(request.options.headers.accept, "application/json");
   assert.equal(request.options.headers["If-Match"], '"v1"');
-  assert.deepEqual(JSON.parse(request.options.body), { backup: validBackup });
+  assert.deepEqual(JSON.parse(request.options.body), {
+    backup: validBackup,
+    writeCondition: { etag: '"v1"' },
+  });
 });
 
 test("saving malformed Spending lists rejects the state instead of silently clearing entries", async () => {
@@ -164,6 +167,7 @@ test("saveState creates the first remote state conditionally when no ETag exists
 
   assert.equal(await client.saveState(validState, null), '"v1"');
   assert.equal(request.options.headers["If-None-Match"], "*");
+  assert.deepEqual(JSON.parse(request.options.body).writeCondition, { onlyIfNew: true });
 });
 
 test("migration creates state conditionally and returns its ETag", async () => {
@@ -182,6 +186,7 @@ test("migration creates state conditionally and returns its ETag", async () => {
     etag: '"v1"',
   });
   assert.equal(request.options.headers["If-None-Match"], "*");
+  assert.deepEqual(JSON.parse(request.options.body).writeCondition, { onlyIfNew: true });
 });
 
 test("a competing initial migration is reported as a conflict", async () => {

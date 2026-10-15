@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UI regression tests</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<script type="module">
+import { setupSpending } from "../../spending-ui.js";
+import { setupRenovation } from "../../renovation-ui.js";
+import { setupHouses } from "../../houses.js";
+import { setupHome } from "../../home.js";
+import { currentDate, currentMonth } from "../../format.js";
+import { fixture } from "../helpers/renovation-fixture.js";
+
+const source = new DOMParser().parseFromString(await (await fetch("/index.html")).text(), "text/html");
+source.querySelectorAll("script").forEach((script) => script.remove());
+const markup = source.body.innerHTML;
+const results = [];
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+let state;
+let spending;
+let renovation;
+let houses;
+let home;
+let nextId = 0;
+const byId = (id) => document.getElementById(id);
+const field = (name) => byId("spending-form").elements.namedItem(name);
+const click = (selector) => document.querySelector(selector).click();
+
+function showPage(name) {
+  for (const page of ["home", "expenses", "spending", "houses", "renovation"]) {
+    byId(`page-${page}`).hidden = page !== name;
+  }
+}
+
+function reset(name = "spending") {
+  document.body.innerHTML = markup;
+  document.body.style.fontSize = "";
+  byId("signed-in-shell").hidden = false;
+  byId("startup-panel").hidden = true;
+  showPage(name);
+  state = fixture();
+  state.lifestyle = [
+    { id: "food", name: "Food", low: 400, high: 800, everyMonths: 1 },
+    { id: "fuel", name: "Fuel", low: 200, high: 400, everyMonths: 1 },
+  ];
+  state.spending = [{
+    id: "lunch", date: currentDate(), categoryId: "food", amount: 12.34, description: "Lunch",
+  }];
+  const commit = (next) => {
+    state = next;
+    spending.render();
+    renovation.render();
+    houses.render();
+    home.render();
+  };
+  const options = { getState: () => state, commit, newId: () => `ui-${++nextId}` };
+  spending = setupSpending(options);
+  renovation = setupRenovation(options);
+  houses = setupHouses({ ...options, notify: (message) => { throw new Error(message); } });
+  home = setupHome(options);
+  spending.render();
+  renovation.render();
+  houses.render();
+  home.render();
+}
+
+async function test(name, operation) {
+  try {
+    reset();
+    await operation();
+    results.push({ name, passed: true });
+  } catch (error) {
+    results.push({ name, passed: false, error: error.message });
+  }
+}
+
+await test("adding Spending preserves accounting and focuses amount, not a date picker", () => {
+  field("categoryId").value = "fuel";
+  field("amount").value = "23.45";
+  field("description").value = "Fuel stop";
+  byId("spending-form").requestSubmit();
+  assert(state.spending.length === 2 && state.spending[1].amount === 23.45, "Entry was not added correctly");
+  assert(state.spending[1].categoryId === "fuel", "Selected category changed");
+  assert(field("categoryId").value === "fuel" && field("amount").value === "", "Next-entry defaults changed");
+  assert(document.activeElement === field("amount"), "Add unexpectedly focuses the date picker");
+});
+
+await test("editing Spending does not activate the calendar", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  assert(field("amount").value === "12.34", "Edit did not load the entry");
+  assert(document.activeElement === field("amount"), "Edit unexpectedly focuses the date picker");
+});
+
+await test("updating Spending changes one entry and does not activate the calendar", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  field("amount").value = "34.56";
+  byId("spending-form").requestSubmit();
+  assert(state.spending.length === 1 && state.spending[0].amount === 34.56, "Update changed accounting behavior");
+  assert(document.activeElement === field("amount"), "Update unexpectedly focuses the date picker");
+  assert(byId("spending-message").textContent.startsWith("Entry updated"), "Update incorrectly reports an added entry");
+});
+
+await test("cancelling Spending leaves saved data unchanged without calendar activation", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  field("amount").value = "99";
+  byId("spending-cancel").click();
+  assert(state.spending[0].amount === 12.34, "Cancel changed saved data");
+  assert(document.activeElement === field("amount"), "Cancel unexpectedly focuses the date picker");
+});
+
+await test("deleting Spending leaves the next-entry form usable without calendar activation", () => {
+  const confirm = window.confirm;
+  window.confirm = () => true;
+  try { click('#spending-list [aria-label="Delete Lunch"]'); }
+  finally { window.confirm = confirm; }
+  assert(state.spending.length === 0, "Delete did not remove the entry");
+  assert(document.activeElement === field("amount"), "Delete unexpectedly focuses the date picker");
+});
+
+await test("Spending rerender preserves options, selection, draft text, focus and caret", () => {
+  field("categoryId").value = "fuel";
+  const option = field("categoryId").options[0];
+  const filterOption = byId("spending-category-filter").options[0];
+  field("amount").value = "12.34";
+  field("description").value = "Unfinished description";
+  field("description").focus();
+  field("description").setSelectionRange(5, 5);
+  spending.render();
+  assert(field("categoryId").options[0] === option, "Unchanged entry dropdown was rebuilt");
+  assert(byId("spending-category-filter").options[0] === filterOption, "Unchanged filter dropdown was rebuilt");
+  assert(field("categoryId").value === "fuel" && field("amount").value === "12.34", "Draft values changed");
+  assert(document.activeElement === field("description") && field("description").selectionStart === 5, "Draft focus/caret moved");
+});
+
+await test("category renames update Spending choices without changing a valid selection", () => {
+  field("categoryId").value = "fuel";
+  state.lifestyle[1].name = "Updated fuel";
+  spending.render();
+  assert(field("categoryId").value === "fuel", "Rename lost category selection");
+  assert(field("categoryId").selectedOptions[0].textContent === "Updated fuel", "Rename was not reflected");
+});
+
+await test("Renovation keeps an expanded category open after rerender", () => {
+  showPage("renovation");
+  document.querySelector("#renovation-categories details").open = true;
+  renovation.render();
+  assert(document.querySelector("#renovation-categories details").open, "Category panel collapsed");
+});
+
+await test("Renovation rerender preserves the house dropdown and unsaved editor controls", () => {
+  showPage("renovation");
+  byId("renovation-add-item").click();
+  const form = byId("renovation-editor").querySelector("form");
+  const name = form.elements.namedItem("name");
+  name.value = "Unfinished item";
+  name.dispatchEvent(new Event("input", { bubbles: true }));
+  name.focus();
+  name.setSelectionRange(4, 4);
+  const category = form.elements.namedItem("categoryId").options[0];
+  const house = byId("renovation-house").options[0];
+  renovation.render();
+  assert(byId("renovation-house").options[0] === house, "Unchanged house dropdown was rebuilt");
+  assert(form.elements.namedItem("categoryId").options[0] === category, "Unchanged draft category dropdown was rebuilt");
+  assert(name.value === "Unfinished item" && name.selectionStart === 4 && document.activeElement === name, "Editor draft was disrupted");
+});
+
+await test("Spending still rejects a nonpositive amount without committing", () => {
+  field("amount").value = "0";
+  field("description").value = "Invalid entry";
+  byId("spending-form").requestSubmit();
+  assert(state.spending.length === 1, "Invalid amount was committed");
+});
+
+await test("updating a House closes its editor and returns focus to its Edit button", () => {
+  showPage("houses");
+  const row = () => document.querySelector('#house-list [data-id="h1"]');
+  row().open = true;
+  row().querySelector('[aria-label="Edit House One"]').click();
+  byId("house-form").elements.namedItem("name").value = "Updated house";
+  byId("house-form").requestSubmit();
+  assert(state.houses[0].name === "Updated house", "House update was not committed");
+  assert(!byId("house-add").open, "House edit no longer closes on save");
+  assert(document.activeElement === row().querySelector('[aria-label="Edit Updated house"]'), "House update lost keyboard focus");
+});
+
+await test("cancelling a House edit returns focus without changing the House", () => {
+  showPage("houses");
+  const row = document.querySelector('#house-list [data-id="h1"]');
+  row.open = true;
+  const edit = row.querySelector('[aria-label="Edit House One"]');
+  edit.click();
+  byId("house-form").elements.namedItem("name").value = "Unsaved name";
+  byId("house-cancel").click();
+  assert(state.houses[0].name === "House One", "Cancel changed the House");
+  assert(document.activeElement === edit, "House cancel left focus in a hidden form");
+});
+
+async function expensesFrame({ stress = false } = {}) {
+  const doc = source.cloneNode(true);
+  doc.querySelector('meta[http-equiv="Content-Security-Policy"]').remove();
+  const base = doc.createElement("base");
+  base.href = `${location.origin}/`;
+  doc.head.prepend(base);
+  const account = fixture();
+  account.commitments = [{ id: "rent", name: "Rent", amount: 1000, everyMonths: 1 }];
+  if (stress) {
+    account.commitments[0] = {
+      ...account.commitments[0], name: "R".repeat(80), amount: 1000000000, scenario: { on: true },
+    };
+  }
+  const transport = doc.createElement("script");
+  transport.textContent = `
+    let account = ${JSON.stringify(account)};
+    window.fetch = async (path, options = {}) => {
+      if (path !== "/api/state") throw new Error("Unexpected test request: " + path);
+      if (options.method === "PUT") {
+        account = JSON.parse(JSON.parse(options.body).backup).data;
+        return Response.json({ ok: true });
+      }
+      return Response.json({ backup: JSON.stringify({ schemaVersion: 8, data: account }) });
+    };
+    location.hash = "#/expenses";
+  `;
+  doc.head.append(transport);
+  const app = doc.createElement("script");
+  app.type = "module";
+  app.src = "/app.js";
+  doc.body.append(app);
+  const frame = document.createElement("iframe");
+  frame.title = "Synthetic Expenses UI test";
+  frame.style.cssText = "width:100%;height:900px;border:0";
+  if (stress) frame.style.width = "320px";
+  frame.srcdoc = doc.documentElement.outerHTML;
+  document.body.replaceChildren(frame);
+  const deadline = performance.now() + 5000;
+  while (!frame.contentDocument?.querySelector('#signed-in-shell:not([hidden])')) {
+    assert(performance.now() < deadline, "Synthetic Expenses app did not initialize");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return frame.contentDocument;
+}
+
+await test("updating an Expense closes the editor and returns focus to its Edit button", async () => {
+  const doc = await expensesFrame();
+  const section = doc.querySelector('[data-kind="commitments"]');
+  section.querySelector('[aria-label="Edit Rent"]').click();
+  const form = section.querySelector("form");
+  form.elements.namedItem("amount").value = "1200";
+  form.requestSubmit();
+  const edit = section.querySelector('[aria-label="Edit Rent"]');
+  assert(section.querySelector(".cost").textContent.includes("1,200"), "Expense amount was not updated");
+  assert(!section.querySelector("details.add").open, "Expense edit no longer closes on save");
+  assert(doc.activeElement === edit, "Expense update lost keyboard focus");
+});
+
+await test("cancelling an Expense edit returns focus without changing the Expense", async () => {
+  const doc = await expensesFrame();
+  const section = doc.querySelector('[data-kind="commitments"]');
+  const edit = section.querySelector('[aria-label="Edit Rent"]');
+  edit.click();
+  section.querySelector("form").elements.namedItem("amount").value = "1200";
+  section.querySelector('[data-role="cancel"]').click();
+  assert(section.querySelector(".cost").textContent.includes("1,000"), "Cancel changed the Expense");
+  assert(doc.activeElement === edit, "Expense cancel left focus in a hidden form");
+});
+
+await test("long Expense details do not spill into Scenario action buttons on narrow screens", async () => {
+  const doc = await expensesFrame({ stress: true });
+  doc.body.style.fontSize = "24px";
+  const detail = doc.querySelector('[data-kind="commitments"] .items .detail');
+  assert(detail.scrollWidth <= detail.clientWidth + 1, "Expense detail spills outside its grid cell into actions");
+  assert(doc.documentElement.scrollWidth <= doc.documentElement.clientWidth + 1, "Expense row overflows the page");
+});
+
+window.runLayoutChecks = ({ textSize = 16 } = {}) => {
+  reset();
+  document.body.style.fontSize = `${textSize}px`;
+  state.lifestyle[0].name = "Long category ".repeat(5).trim();
+  state.houses[0].name = "Long house ".repeat(7).trim();
+  state.houses[0].startMonth = "2099-01";
+  state.houses[0].loan = 1000000000;
+  state.houses[0].termMonths = 1;
+  state.renovationItems[0].notes = "N".repeat(500);
+  spending.render();
+  houses.render();
+  renovation.render();
+  home.render();
+  const errors = [];
+  for (const name of ["home", "expenses", "spending", "houses", "renovation"]) {
+    showPage(name);
+    const root = byId(`page-${name}`);
+    root.querySelectorAll("details").forEach((panel) => { panel.open = true; });
+    if (name === "renovation") byId("renovation-add-item").click();
+    const visible = (node) => node.getClientRects().length > 0;
+    if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) {
+      errors.push(`${name}: horizontal document overflow`);
+    }
+    for (const control of [...root.querySelectorAll("input,select,textarea")].filter(visible)) {
+      const rect = control.getBoundingClientRect();
+      const parent = control.parentElement.getBoundingClientRect();
+      if (rect.left < parent.left - 1 || rect.right > parent.right + 1) {
+        errors.push(`${name}: ${control.name || control.id} exceeds its field`);
+      }
+    }
+    for (const pair of [...root.querySelectorAll(".pair")].filter(visible)) {
+      const controls = [...pair.querySelectorAll("input,select")].filter(visible);
+      if (controls.length !== 2) continue;
+      const [first, second] = controls.map((control) => control.getBoundingClientRect());
+      if (Math.abs(first.x - second.x) > 1) {
+        if (first.width < 190 || second.width < 190) errors.push(`${name}: paired controls are too cramped`);
+        if (Math.abs(first.bottom - second.bottom) > 1) errors.push(`${name}: paired controls are misaligned`);
+      }
+      if (first.right > second.left && first.left < second.right &&
+        first.bottom > second.top && first.top < second.bottom) errors.push(`${name}: paired controls overlap`);
+    }
+  }
+  return { width: innerWidth, textSize, errors };
+};
+const layout = window.runLayoutChecks();
+results.push({
+  name: `All-page control alignment and overflow at ${layout.width}px`,
+  passed: layout.errors.length === 0,
+  ...(layout.errors.length ? { error: layout.errors.join("; ") } : {}),
+});
+window.uiTestResults = results;
+document.title = `UI tests: ${results.filter((result) => result.passed).length}/${results.length} passed`;
+const report = document.createElement("pre");
+report.style.whiteSpace = "pre-wrap";
+report.textContent = results.map((result) =>
+  `${result.passed ? "PASS" : "FAIL"} ${result.name}${result.error ? `: ${result.error}` : ""}`,
+).join("\n");
+document.body.replaceChildren(report);
+</script>
+</body>
+</html>

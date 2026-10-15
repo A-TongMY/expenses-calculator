@@ -23,7 +23,7 @@ import {
   StorageError,
   createStorageClient,
 } from "./storage.js";
-import { el, iconButton, rememberPanels } from "./ui.js";
+import { el, focusRowAction, iconButton, rememberPanels } from "./ui.js";
 
 const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
@@ -351,8 +351,10 @@ function createSection(root, key, config) {
 
   field("cadence").addEventListener("change", syncCustomField);
   cancel.addEventListener("click", () => {
+    const item = find(editingId);
     reset();
     addPanel.open = false;
+    if (item) focusRowAction(list, item.id, `Edit ${item.name}`);
   });
 
   form.addEventListener("input", clearValidity);
@@ -403,9 +405,11 @@ function createSection(root, key, config) {
         return;
       }
     }
+    const wasEditing = editingId !== null;
     reset();
     commit(next);
-    field("name").focus();
+    if (wasEditing) focusRowAction(list, item.id, `Edit ${item.name}`);
+    else field("name").focus();
   });
 
   syncCustomField();

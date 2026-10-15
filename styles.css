@@ -97,17 +97,18 @@ main { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 4rem; }
 .save-recovery p { margin: 0 0 0.5rem; }
 
 /* Controls */
-.field { display: block; margin-bottom: 0.7rem; }
+.field { display: block; min-width: 0; margin-bottom: 0.7rem; }
 .field span { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.2rem; }
 input, select, button { font: inherit; }
 input, select {
-  width: 100%; padding: 0.55rem 0.7rem; color: var(--text);
+  width: 100%; min-width: 0; max-width: 100%; padding: 0.55rem 0.7rem; color: var(--text);
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
 }
+.field > input, .field > select { height: calc(1.5em + 1.1rem + 2px); line-height: 1.5; }
 input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, a:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
-.pair { display: grid; gap: 0 0.7rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+.pair { display: grid; gap: 0 0.7rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); align-items: end; }
 
 button {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
@@ -188,7 +189,7 @@ button.secondary { background: transparent; color: var(--accent); }
 .panel > summary .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel > summary .chev { margin-left: auto; color: var(--muted); transition: transform 0.15s; }
 .panel[open] > summary .chev { transform: rotate(180deg); }
-.panel-body { padding: 0 1rem 1rem; }
+.panel-body { min-width: 0; padding: 0 1rem 1rem; overflow-wrap: anywhere; }
 .count {
   min-width: 1.4rem; padding: 0 0.4rem; border-radius: 999px; text-align: center;
   background: var(--surface-2); color: var(--muted); font-size: 0.75rem; font-weight: 600;
@@ -208,7 +209,7 @@ button.secondary { background: transparent; color: var(--accent); }
 }
 .items li:last-child { border-bottom: 0; }
 .items .name { grid-area: name; font-weight: 600; overflow-wrap: anywhere; }
-.items .detail { grid-area: detail; color: var(--muted); font-size: 0.85rem; min-width: 0; }
+.items .detail { grid-area: detail; color: var(--muted); font-size: 0.85rem; min-width: 0; overflow-wrap: anywhere; }
 .items .cost { grid-area: cost; font-variant-numeric: tabular-nums; text-align: right; }
 .items .actions { grid-area: actions; flex-wrap: nowrap; gap: 0; justify-content: flex-end; }
 .items li.scenario .name { font-style: italic; }
@@ -314,12 +315,17 @@ form .hint:empty { display: none; }
   .logo { margin-right: 0; }
   .bar-row { grid-template-columns: minmax(0, 1fr); }
   .bar-row .value { overflow-wrap: anywhere; }
-  .spending-items li { grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "cost" "detail" "actions"; gap: 0.25rem; }
-  .spending-items .cost { text-align: left; overflow-wrap: anywhere; }
+  .items li, .spending-items li { grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "cost" "detail" "actions"; gap: 0.25rem; }
+  .items .cost, .spending-items .cost { text-align: left; overflow-wrap: anywhere; }
+  .houses .panel > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .houses .panel > summary .title { grid-column: 2; white-space: normal; }
+  .houses .panel > summary .chip, .houses .panel > summary .amount { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  .houses .panel > summary .chip { justify-self: start; }
+  .houses .panel > summary .chev { grid-column: 3; grid-row: 1; }
 }
 .card > .bar-rows:first-of-type { margin-top: 0; }
 .stat.wide { grid-column: 1 / -1; }
-.renovation-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem; align-items: end; margin-bottom: 1rem; }
+.renovation-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 0.75rem; align-items: end; margin-bottom: 1rem; }
 .renovation-form h3, .renovation-form .note { grid-column: 1 / -1; }
 .renovation-form textarea { width: 100%; min-height: 5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
 .renovation-payments { padding: 0; list-style: none; display: grid; gap: 0.75rem; }

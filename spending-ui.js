@@ -3,7 +3,7 @@ import { isActiveIn, roundToSen } from "./calc.js";
 import { MAX_AMOUNT, MAX_DESCRIPTION_LENGTH, isDate, isMonth } from "./rules.js";
 import { saveSpendingEntry, deleteSpendingEntry, spendingReport } from "./spending.js";
 import { renderSpendingSummary } from "./spending-summary.js";
-import { el, icon, iconButton } from "./ui.js";
+import { el, icon, iconButton, syncSelectOptions } from "./ui.js";
 
 export function setupSpending({ getState, commit, newId }) {
   const byId = (id) => document.getElementById(id);
@@ -39,21 +39,9 @@ export function setupSpending({ getState, commit, newId }) {
   }
 
   function syncCategories(select, categories, all = false) {
-    const previous = select.value;
-    const options = categories.map(({ id, name }) => {
-      const option = el("option", "", name);
-      option.value = id;
-      return option;
-    });
-    if (all) {
-      const option = el("option", "", "All categories");
-      option.value = "";
-      options.unshift(option);
-    }
-    select.replaceChildren(...options);
-    if (categories.some(({ id }) => id === previous) || (all && previous === "")) {
-      select.value = previous;
-    }
+    const options = categories.map(({ id, name }) => ({ value: id, label: name }));
+    if (all) options.unshift({ value: "", label: "All categories" });
+    syncSelectOptions(select, options);
   }
 
   function startEdit(entry) {
@@ -63,7 +51,7 @@ export function setupSpending({ getState, commit, newId }) {
     cancel.hidden = false;
     submit.replaceChildren(icon("check"), "Update");
     message.textContent = "";
-    field("date").focus();
+    field("amount").focus();
   }
 
   function remove(entry) {
@@ -78,7 +66,7 @@ export function setupSpending({ getState, commit, newId }) {
     if (editingId === entry.id) reset();
     commit(next);
     message.textContent = "Entry removed from your changes.";
-    field("date").focus();
+    field("amount").focus();
   }
 
   function buildRow(entry) {
@@ -141,7 +129,7 @@ export function setupSpending({ getState, commit, newId }) {
   cancel.addEventListener("click", () => {
     reset();
     message.textContent = "";
-    field("date").focus();
+    field("amount").focus();
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -173,12 +161,13 @@ export function setupSpending({ getState, commit, newId }) {
     }
     const outside = entry.date.slice(0, 7) !== month.value ||
       (categoryFilter.value && categoryFilter.value !== entry.categoryId);
+    const feedback = editingId ? "Entry updated in your changes" : "Entry added to your changes";
     reset();
     commit(next);
     message.textContent = outside
-      ? "Entry added to your changes outside these filters."
-      : "Entry added to your changes.";
-    field("date").focus();
+      ? `${feedback} outside these filters.`
+      : `${feedback}.`;
+    field("amount").focus();
   });
   return { render, reset };
 }

@@ -29,6 +29,28 @@ export function iconButton({ name, label, className = "", onClick }) {
   return button;
 }
 
+export function syncSelectOptions(select, options) {
+  if (
+    select.options.length === options.length &&
+    options.every(({ value, label }, index) =>
+      select.options[index].value === value && select.options[index].textContent === label)
+  ) return;
+  const previous = select.value;
+  select.replaceChildren(...options.map(({ value, label }) => {
+    const option = el("option", "", label);
+    option.value = value;
+    return option;
+  }));
+  if (options.some(({ value }) => value === previous)) select.value = previous;
+}
+
+export function focusRowAction(list, id, label) {
+  const row = [...list.children].find((node) => node.dataset.id === id);
+  const action = row && [...row.querySelectorAll("button")]
+    .find((button) => button.getAttribute("aria-label") === label);
+  action?.focus();
+}
+
 // Remembers which panels are open. Kept apart from the saved data, so backups never carry it.
 const PANELS_KEY = "expenses-calculator:panels";
 

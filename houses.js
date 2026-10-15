@@ -9,7 +9,7 @@ import {
   isMonth,
   isValidHouse,
 } from "./rules.js";
-import { el, icon, iconButton } from "./ui.js";
+import { el, focusRowAction, icon, iconButton } from "./ui.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -257,8 +257,10 @@ export function setupHouses({ getState, commit, newId, notify }) {
     updateHint();
   });
   cancel.addEventListener("click", () => {
+    const house = find(editingId);
     reset();
     addPanel.open = false;
+    if (house) focusRowAction(list, house.id, `Edit ${house.name}`);
   });
 
   form.addEventListener("submit", (event) => {
@@ -296,10 +298,12 @@ export function setupHouses({ getState, commit, newId, notify }) {
       form.reportValidity();
       return;
     }
+    const wasEditing = editingId !== null;
     reset();
     openHouses.add(item.id);
     commit({ ...getState(), houses: next });
-    field("name").focus();
+    if (wasEditing) focusRowAction(list, item.id, `Edit ${item.name}`);
+    else field("name").focus();
   });
 
   updateHint();

@@ -36,10 +36,13 @@ Requires Node.js `>=20.12.2`.
 npm ci
 npm run dev      # Netlify Dev serves the app and Functions locally
 npm test         # Node's built-in test runner
+npm run test:ui  # prints a loopback-only browser regression test URL
 npm run build    # creates the allowlisted static site in dist/
 ```
 
 Without the Netlify environment variables below, authentication and state endpoints fail closed; the app does not replace remote data with an empty state. Automated tests use mock credentials and storage. Do not enter real expense data in an unconfigured local environment.
+
+For UI regressions, open the URL printed by `npm run test:ui` in a browser. The page displays pass/fail results using the real forms and page modules with synthetic data only; no sign-in or remote account is used. It checks Spending focus and draft preservation, Expenses/Houses edit recovery, Renovation dropdown/panel stability, and all-page control alignment at the current viewport. Reload at phone and desktop widths. For an expanded responsive check, call `runLayoutChecks({ textSize: 24 })` in that page's developer console; the returned `errors` list must be empty. The test page/fixtures are not production assets. Stop the loopback server with Ctrl+C when finished.
 
 ## Deploy to Netlify
 

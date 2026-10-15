@@ -6,7 +6,7 @@ import {
   deleteRenovationCategory, renovationReport,
 } from "./renovation.js";
 import { renderRenovationSummary } from "./renovation-summary.js";
-import { el } from "./ui.js";
+import { el, syncSelectOptions } from "./ui.js";
 
 export function createRenovationEditor({ getState, commit, newId }) {
   let draft = null;
@@ -230,12 +230,12 @@ export function setupRenovation({ getState, commit, newId }) {
     const control = itemForm.elements.namedItem("categoryId");
     const previous = control.value;
     const categories = editor.categories();
-    control.replaceChildren(...categories.map(({ id, name }) => option(id, name)));
-    if (categories.some(({ id }) => id === previous)) control.value = previous;
-    else {
-      control.prepend(option("", "Choose a category"));
-      control.value = "";
+    const options = categories.map(({ id, name }) => ({ value: id, label: name }));
+    if (!categories.some(({ id }) => id === previous)) {
+      options.unshift({ value: "", label: "Choose a category" });
     }
+    syncSelectOptions(control, options);
+    if (!categories.some(({ id }) => id === previous)) control.value = "";
     readDraftFields();
   }
 
@@ -393,8 +393,8 @@ export function setupRenovation({ getState, commit, newId }) {
       clearEditor();
       selectedHouse = state.houses[0]?.id ?? "";
     }
-    houseSelect.replaceChildren(...state.houses.map(({ id, name }) => option(id, name)));
-    houseSelect.value = selectedHouse;
+    syncSelectOptions(houseSelect, state.houses.map(({ id, name }) => ({ value: id, label: name })));
+    if (houseSelect.value !== selectedHouse) houseSelect.value = selectedHouse;
     houseSelect.disabled = !selectedHouse;
     byId("renovation-no-houses").hidden = Boolean(selectedHouse);
     byId("renovation-workspace").hidden = !selectedHouse;
@@ -403,9 +403,14 @@ export function setupRenovation({ getState, commit, newId }) {
     syncDraftCategories();
     const report = renovationReport(state, selectedHouse);
     renderRenovationSummary(overview, report);
+    const openCategories = new Set(
+      [...categoriesHost.children].filter((card) => card.open).map((card) => card.dataset.id),
+    );
     categoriesHost.replaceChildren();
     for (const category of report.categories) {
       const card = el("details", "panel");
+      card.dataset.id = category.categoryId;
+      card.open = openCategories.has(category.categoryId);
       const summary = el("summary", "", category.name);
       const content = el("div", "panel-body cards");
       renderRenovationSummary(content, category);
@@ -463,6 +468,7 @@ export function setupRenovation({ getState, commit, newId }) {
 
   function reset() {
     clearEditor();
+    categoriesHost.replaceChildren();
     categoryEditingId = null;
     categoryForm.reset();
     message.textContent = "";

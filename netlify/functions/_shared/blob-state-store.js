@@ -20,12 +20,14 @@ export function createBlobStateStore(store) {
 
     async write(backup, { etag, onlyIfNew } = {}) {
       let conditions;
-      if (onlyIfNew === true && etag === undefined) {
+      if (onlyIfNew === undefined && etag === undefined) {
+        conditions = {};
+      } else if (onlyIfNew === true && etag === undefined) {
         conditions = { onlyIfNew: true };
       } else if (onlyIfNew !== true && typeof etag === "string" && etag) {
         conditions = { onlyIfMatch: etag };
       } else {
-        throw new TypeError("A conditional state write is required.");
+        throw new TypeError("The state write condition is invalid.");
       }
 
       const result = await store.set(STATE_KEY, backup, conditions);

@@ -154,7 +154,7 @@ export function createStateHandler({
       } catch {
         return jsonResponse(500, { error: "stored_state_invalid" });
       }
-      return jsonResponse(200, { backup, notice }, { etag: stored.etag });
+      return jsonResponse(200, { backup, notice, stateVersion: stored.etag }, { etag: stored.etag });
     }
 
     if (request.headers.get("origin") !== expectedOrigin) {
@@ -217,10 +217,6 @@ export function createStateHandler({
       }
       conditions = bodyCondition;
     }
-    if (!conditions) {
-      return jsonResponse(428, { error: "write_condition_required" });
-    }
-
     let result;
     try {
       result = await store.write(normalizedBackup, conditions);
@@ -233,7 +229,7 @@ export function createStateHandler({
     if (!result || typeof result.etag !== "string" || !result.etag) {
       return jsonResponse(503, { error: "storage_unavailable" });
     }
-    return jsonResponse(200, { ok: true }, { etag: result.etag });
+    return jsonResponse(200, { ok: true, stateVersion: result.etag }, { etag: result.etag });
   };
 }
 

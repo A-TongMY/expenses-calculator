@@ -68,20 +68,21 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
       method: "PUT",
       headers: {
         "content-type": "application/json",
-        ...(writeCondition.onlyIfNew
+        ...(writeCondition?.onlyIfNew
           ? { "If-None-Match": "*" }
-          : { "If-Match": writeCondition.etag }),
+          : {}),
       },
-      body: JSON.stringify({ backup, writeCondition }),
+      body: JSON.stringify({ backup, ...(writeCondition ? { writeCondition } : {}) }),
     });
     if (response.status === 401) throw new AuthRequiredError();
     if (response.status === 409) throw new StorageConflictError();
     if (response.status !== 200) {
       throw new StorageError("The remote expense data could not be saved.", response.status);
     }
-    const etag = response.headers.get("etag");
-    if (!etag) throw new StorageError("The remote service returned no state version.");
-    return etag;
+    const body = await parseResponseJson(response);
+    if (body?.ok !== true) {
+      throw new StorageError("The remote service returned an invalid save acknowledgement.");
+    }
   };
 
   return {
@@ -98,27 +99,17 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
       if (!body || typeof body.backup !== "string") {
         throw new StorageError("The remote service returned an invalid state response.");
       }
-      const etag = response.headers.get("etag");
-      if (!etag) throw new StorageError("The remote service returned no state version.");
       const { state, notice } = validatedBackup(body.backup);
       if (body.notice != null && typeof body.notice !== "string") {
         throw new StorageError("The remote service returned an invalid upgrade notice.");
       }
       const upgradeNotice = body.notice ?? notice;
-      return { status: "loaded", state, etag, ...(upgradeNotice ? { notice: upgradeNotice } : {}) };
+      return { status: "loaded", state, ...(upgradeNotice ? { notice: upgradeNotice } : {}) };
     },
 
-    async saveState(state, etag) {
-      if (etag !== null && etag !== undefined && (typeof etag !== "string" || !etag)) {
-        throw new StorageError("The remote state version is invalid.");
-      }
+    async saveState(state) {
       const { backup } = validatedBackup(state);
-      const condition =
-        etag === null || etag === undefined ? { onlyIfNew: true } : { etag };
-      return writeBackup(
-        backup,
-        condition,
-      );
+      await writeBackup(backup);
     },
 
     loadLegacyState() {
@@ -153,11 +144,10 @@ export function createStorageClient({ fetchImpl = fetch, storage } = {}) {
 
     async migrateLegacyState(backup) {
       const validated = validatedBackup(backup);
-      const etag = await writeBackup(validated.backup, { onlyIfNew: true });
+      await writeBackup(validated.backup, { onlyIfNew: true });
       return {
         status: "migrated",
         state: validated.state,
-        etag,
         ...(validated.notice ? { notice: validated.notice } : {}),
       };
     },

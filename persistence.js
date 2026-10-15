@@ -1,11 +1,7 @@
-import { StorageConflictError } from "./storage.js";
-
-export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay = 300 }) {
-  let currentEtag = etag;
+export function createSaveQueue({ save, onStatus = () => {}, delay = 300 }) {
   let pending = null;
   let timer = null;
   let inFlight = null;
-  let pausedError = null;
   let stopped = false;
   let savingAnnounced = false;
 
@@ -30,37 +26,32 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
 
   const flush = async () => {
     cancelTimer();
-    if (stopped) return currentEtag;
-    if (pausedError) throw pausedError;
+    if (stopped) return;
     if (inFlight) {
       await inFlight;
       if (pending !== null) return flush();
-      return currentEtag;
+      return;
     }
-    if (pending === null) return currentEtag;
+    if (pending === null) return;
 
     const snapshot = pending;
     pending = null;
     announceSaving();
     const operation = Promise.resolve()
-      .then(() => save(snapshot, currentEtag))
-      .then((nextEtag) => {
-        if (typeof nextEtag !== "string" || !nextEtag) {
-          throw new TypeError("A successful save must return an ETag.");
-        }
-        currentEtag = nextEtag;
+      .then(() => save(snapshot))
+      .then(() => {
         if (pending === null) {
           savingAnnounced = false;
           if (!stopped) notify("saved");
         }
-        return currentEtag;
       })
       .catch((error) => {
-        pending ??= snapshot;
-        pausedError = error;
         savingAnnounced = false;
         if (!stopped) {
-          notify(error instanceof StorageConflictError ? "conflict" : "error");
+          const hasNewerEdit = pending !== null;
+          pending ??= snapshot;
+          notify("error");
+          if (hasNewerEdit) schedule();
         }
         throw error;
       })
@@ -68,32 +59,19 @@ export function createSaveQueue({ save, onStatus = () => {}, etag = null, delay 
         inFlight = null;
       });
     inFlight = operation;
-    const result = await operation;
+    await operation;
     if (pending !== null && !stopped) return flush();
-    return result;
   };
 
   return {
     enqueue(state) {
       if (stopped) throw new Error("The save queue is stopped.");
       pending = structuredClone(state);
-      if (!pausedError) {
-        announceSaving();
-        schedule();
-      }
+      announceSaving();
+      schedule();
     },
 
     flush,
-
-    reset(remoteEtag) {
-      if (inFlight) throw new Error("The save queue cannot reset during a write.");
-      cancelTimer();
-      pending = null;
-      pausedError = null;
-      stopped = false;
-      savingAnnounced = false;
-      currentEtag = remoteEtag;
-    },
 
     stop() {
       cancelTimer();

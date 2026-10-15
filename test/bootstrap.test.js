@@ -28,7 +28,7 @@ const blankState = { ...emptyRenovation(), income: 0, commitments: [], lifestyle
 
 test("loaded remote data bypasses legacy browser storage", async () => {
   const storage = {
-    loadState: async () => ({ status: "loaded", state: remoteState, etag: '"v1"' }),
+    loadState: async () => ({ status: "loaded", state: remoteState }),
     loadLegacyState() {
       throw new Error("legacy storage must not be inspected");
     },
@@ -37,14 +37,14 @@ test("loaded remote data bypasses legacy browser storage", async () => {
   const result = await initializeState({ storage, confirmMigration: async () => true });
 
   assert.deepEqual(result.state, remoteState);
-  assert.equal(result.etag, '"v1"');
+  assert.equal(result.empty, false);
   assert.equal(result.migrated, false);
 });
 
 test("loaded remote upgrade notices reach startup unchanged", async () => {
   const notice = "Older check-ins were removed; other saved data was kept.";
   const storage = {
-    loadState: async () => ({ status: "loaded", state: remoteState, etag: '"v1"', notice }),
+    loadState: async () => ({ status: "loaded", state: remoteState, notice }),
     loadLegacyState() {
       throw new Error("legacy storage must not be inspected");
     },
@@ -53,7 +53,7 @@ test("loaded remote upgrade notices reach startup unchanged", async () => {
   const result = await initializeState({ storage });
 
   assert.equal(result.notice, notice);
-  assert.equal(result.etag, '"v1"');
+  assert.equal(result.empty, false);
 });
 
 test("a remote read error is not converted into a blank state", async () => {
@@ -74,7 +74,7 @@ test("a remote read error is not converted into a blank state", async () => {
 
 test("malformed storage results do not become a blank or loaded state", async () => {
   const invalidRemote = {
-    loadState: async () => ({ status: "loaded", state: remoteState, etag: null }),
+    loadState: async () => ({ status: "loaded", state: null }),
     loadLegacyState: () => legacy,
   };
   const invalidLegacy = {
@@ -99,7 +99,7 @@ test("accepted migration initializes the remote state without deleting the legac
     loadLegacyState: () => legacy,
     async migrateLegacyState(backup) {
       assert.equal(backup, legacy.backup);
-      return { status: "migrated", state: legacyState, etag: '"v2"' };
+      return { status: "migrated", state: legacyState };
     },
   };
 
@@ -113,7 +113,7 @@ test("accepted migration initializes the remote state without deleting the legac
 
   assert.deepEqual(confirmedLegacy, legacy);
   assert.deepEqual(result.state, legacyState);
-  assert.equal(result.etag, '"v2"');
+  assert.equal(result.empty, false);
   assert.equal(result.migrated, true);
 });
 
@@ -123,7 +123,7 @@ test("accepted migration propagates the legacy reader notice", async () => {
     loadState: async () => ({ status: "empty" }),
     loadLegacyState: () => ({ ...legacy, notice }),
     async migrateLegacyState() {
-      return { status: "migrated", state: legacyState, etag: '"v2"' };
+      return { status: "migrated", state: legacyState };
     },
   };
 
@@ -144,7 +144,7 @@ test("declined migration leaves the remote state empty and local data available"
   const result = await initializeState({ storage, confirmMigration: async () => false });
 
   assert.deepEqual(result.state, blankState);
-  assert.equal(result.etag, null);
+  assert.equal(result.empty, true);
   assert.equal(result.migrated, false);
   assert.equal(migrationCalls, 0);
 });
@@ -178,7 +178,7 @@ test("a competing migration returns the state created by the other device", asyn
       reads += 1;
       return reads === 1
         ? { status: "empty" }
-        : { status: "loaded", state: remoteState, etag: '"v9"', notice: remoteNotice };
+        : { status: "loaded", state: remoteState, notice: remoteNotice };
     },
     loadLegacyState: () => ({ ...legacy, notice: legacyNotice }),
     async migrateLegacyState() {
@@ -189,9 +189,9 @@ test("a competing migration returns the state created by the other device", asyn
   const result = await initializeState({ storage, confirmMigration: () => true });
 
   assert.deepEqual(result.state, remoteState);
-  assert.equal(result.etag, '"v9"');
+  assert.equal(result.empty, false);
   assert.equal(result.migrated, false);
-  assert.match(result.notice, /Another device/);
+  assert.match(result.notice, /initialized before migration completed/);
   assert.match(result.notice, /Older check-ins were removed from the remote copy/);
   assert.match(result.notice, /Older check-ins were removed from the browser copy/);
   assert.equal(reads, 2);

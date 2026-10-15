@@ -20,7 +20,6 @@ import {
 } from "./rules.js";
 import {
   AuthRequiredError,
-  StorageConflictError,
   StorageError,
   createStorageClient,
 } from "./storage.js";
@@ -43,9 +42,6 @@ const els = {
   signedInShell: $("signed-in-shell"),
   saveStatus: $("save-status"),
   logoutButton: $("logout-button"),
-  conflictPanel: $("conflict-panel"),
-  reloadRemoteButton: $("reload-remote-button"),
-  exportUnsavedButton: $("export-unsaved-button"),
   saveRecovery: $("save-recovery"),
   saveRecoveryMessage: $("save-recovery-message"),
   retrySaveButton: $("retry-save-button"),
@@ -95,7 +91,6 @@ let state = {
   income: 0, commitments: [], lifestyle: [], spending: [], houses: [],
   renovationCategories: [], renovationItems: [], renovationPayments: [],
 };
-let etag = null;
 let saveQueue = null;
 let startupNotice = null;
 let hasUnsavedChanges = false;
@@ -132,29 +127,20 @@ function updateSaveStatus(status) {
     hasUnsavedChanges = false;
     els.saveStatus.textContent = "Saved";
     els.saveRecovery.hidden = true;
-    els.conflictPanel.hidden = true;
     if (startupNotice) showNotice(startupNotice);
     else els.notice.hidden = true;
     return;
   }
   hasUnsavedChanges = true;
-  if (status === "conflict") {
-    els.saveStatus.textContent = "Conflict";
-    els.conflictPanel.hidden = false;
-    els.saveRecovery.hidden = true;
-    return;
-  }
   els.saveStatus.textContent = "Not saved";
   els.saveRecoveryMessage.textContent =
     "Your changes are still in this tab, but have not been saved to your account. Export a backup or retry.";
   els.saveRecovery.hidden = false;
 }
 
-async function saveRemoteState(nextState, currentEtag) {
+async function saveRemoteState(nextState) {
   try {
-    const nextEtag = await storage.saveState(nextState, currentEtag);
-    etag = nextEtag;
-    return nextEtag;
+    await storage.saveState(nextState);
   } catch (error) {
     if (error instanceof AuthRequiredError) {
       showSignIn("Your session expired. Sign in again to continue; unsaved changes remain available to export.");
@@ -560,12 +546,10 @@ async function initializeApp() {
     });
     state = initialized.state;
     renovation.reset();
-    etag = initialized.etag;
     startupNotice = initialized.notice;
-    els.saveStatus.textContent = etag === null ? "Ready" : "Saved";
+    els.saveStatus.textContent = initialized.empty ? "Ready" : "Saved";
     saveQueue = createSaveQueue({
       save: saveRemoteState,
-      etag,
       onStatus: updateSaveStatus,
       delay: 300,
     });
@@ -659,26 +643,11 @@ function exportCurrentState() {
 async function retrySave() {
   els.retrySaveButton.disabled = true;
   try {
-    const remote = await storage.loadState();
-    if (remote.status === "loaded") {
-      if (etag === null || remote.etag !== etag) {
-        updateSaveStatus("conflict");
-        return;
-      }
-      saveQueue.reset(remote.etag);
-      etag = remote.etag;
-    } else if (remote.status === "empty" && etag === null) {
-      saveQueue.reset(null);
-    } else {
-      throw new StorageError("The remote state changed and could not be retried safely.");
-    }
     saveQueue.enqueue(state);
     await saveQueue.flush();
   } catch (error) {
     if (error instanceof AuthRequiredError) {
       showSignIn("Your session expired. Sign in again; unsaved changes remain available to export.");
-    } else if (error instanceof StorageConflictError) {
-      return;
     } else {
       els.saveRecoveryMessage.textContent =
         "The save still has not completed. Your edits remain in this tab and can be exported.";
@@ -686,38 +655,6 @@ async function retrySave() {
     }
   } finally {
     els.retrySaveButton.disabled = false;
-  }
-}
-
-async function reloadRemoteVersion() {
-  if (!confirm("Load the remote version? This replaces the current edits in this tab. Export them first if you need a copy.")) {
-    return;
-  }
-  els.reloadRemoteButton.disabled = true;
-  try {
-    const remote = await storage.loadState();
-    if (remote.status !== "loaded") {
-      throw new StorageError("The remote version is no longer available.");
-    }
-    state = remote.state;
-    renovation.reset();
-    startupNotice = remote.notice ?? null;
-    etag = remote.etag;
-    saveQueue.reset(etag);
-    hasUnsavedChanges = false;
-    syncIncomeField();
-    renderAll();
-    updateSaveStatus("saved");
-  } catch (error) {
-    if (error instanceof AuthRequiredError) {
-      showSignIn("Your session expired. Sign in again; unsaved changes remain available to export.");
-    } else {
-      els.saveRecoveryMessage.textContent =
-        "The remote version could not be loaded. Your current edits are still available to export.";
-      els.saveRecovery.hidden = false;
-    }
-  } finally {
-    els.reloadRemoteButton.disabled = false;
   }
 }
 
@@ -754,8 +691,6 @@ async function signOut() {
 
 els.retryStartup.addEventListener("click", () => void initializeApp());
 els.retrySaveButton.addEventListener("click", () => void retrySave());
-els.reloadRemoteButton.addEventListener("click", () => void reloadRemoteVersion());
-els.exportUnsavedButton.addEventListener("click", exportCurrentState);
 $("save-recovery-export").addEventListener("click", exportCurrentState);
 els.authExportButton.addEventListener("click", exportCurrentState);
 els.exportButton.addEventListener("click", exportCurrentState);

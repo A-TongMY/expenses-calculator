@@ -52,7 +52,7 @@ function fakeStore({ backup = null, etag = '"v1"', conflict = false } = {}) {
         ? null
         : { backup: currentBackup, etag: currentEtag };
     },
-    async write(nextBackup, conditions) {
+    async write(nextBackup, conditions = {}) {
       writeCalls.push({ backup: nextBackup, conditions });
       if (
         conflict ||
@@ -157,7 +157,9 @@ test("GET returns a validated stored backup and its ETag", async () => {
   const response = await handler(getStateRequest());
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { backup: validBackup, notice: null });
+  assert.deepEqual(await response.json(), {
+    backup: validBackup, notice: null, stateVersion: '"v7"',
+  });
   assert.equal(response.headers.get("etag"), '"v7"');
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
@@ -183,6 +185,7 @@ test("GET upgrades v6 in memory and preserves the original ETag for a conditiona
   ]);
   assert.deepEqual(upgraded.data.spending, []);
   assert.match(body.notice, /check-in/i);
+  assert.equal(body.stateVersion, '"legacy-etag"');
   assert.equal(response.headers.get("etag"), '"legacy-etag"');
   assert.equal(store.writeCalls.length, 0);
 
@@ -204,6 +207,16 @@ test("GET reports absence only when the blob store returns null", async () => {
 
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: "state_not_found" });
+});
+
+test("successful PUT returns the exact storage version in JSON as well as its HTTP header", async () => {
+  const handler = createStateHandler({
+    authenticate: allowedUser, store: fakeStore(), expectedOrigin,
+  });
+  const response = await handler(putRequest(validBackup, { ifNoneMatch: true }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, stateVersion: '"v2"' });
+  assert.equal(response.headers.get("etag"), '"v2"');
 });
 
 test("GET upgrades schema 7 Spending without writes and preserves its ETag for saving", async () => {
@@ -232,6 +245,7 @@ test("GET upgrades schema 7 Spending without writes and preserves its ETag for s
   assert.equal(body.notice, null);
   assert.equal(store.writeCalls.length, 0);
   assert.equal(response.headers.get("etag"), '"schema7-etag"');
+  assert.equal(body.stateVersion, '"schema7-etag"');
   const saved = await handler(putRequest(body.backup, {
     writeCondition: { etag: response.headers.get("etag") },
   }));
@@ -402,7 +416,7 @@ test("a stale state update does not replace the existing blob", async () => {
   assert.equal(store.currentEtag, '"v2"');
 });
 
-test("writes without a conditional header or with the wrong content type are rejected", async () => {
+test("ordinary writes need no condition while wrong content types are rejected", async () => {
   const store = fakeStore();
   const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
   const noPrecondition = await handler(putRequest(validBackup));
@@ -410,9 +424,40 @@ test("writes without a conditional header or with the wrong content type are rej
     putRequest(validBackup, { ifNoneMatch: true, contentType: "text/plain" }),
   );
 
-  assert.equal(noPrecondition.status, 428);
+  assert.equal(noPrecondition.status, 200);
   assert.equal(wrongContentType.status, 415);
-  assert.equal(store.writeCalls.length, 0);
+  assert.equal(store.writeCalls.length, 1);
+  assert.equal(store.currentBackup, validBackup);
+});
+
+test("an unconditional save replaces an existing account snapshot", async () => {
+  const store = fakeStore({ backup: legacyV6Backup, etag: '"newer"' });
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  assert.equal((await handler(putRequest(validBackup))).status, 200);
+  assert.equal(store.currentBackup, validBackup);
+});
+
+test("create-only migration cannot overwrite an existing account", async () => {
+  const store = fakeStore({ backup: legacyV6Backup });
+  const handler = createStateHandler({ authenticate: allowedUser, store, expectedOrigin });
+  const response = await handler(putRequest(validBackup, { writeCondition: { onlyIfNew: true } }));
+  assert.equal(response.status, 409);
+  assert.equal(store.currentBackup, legacyV6Backup);
+});
+
+test("the Blobs adapter writes unconditionally when no condition is supplied", async () => {
+  let saved;
+  const adapter = createBlobStateStore({
+    async set(key, value, options) {
+      assert.equal(key, "state");
+      assert.equal(options?.onlyIfMatch, undefined);
+      assert.equal(options?.onlyIfNew, undefined);
+      saved = value;
+      return { modified: true, etag: '"v2"' };
+    },
+  });
+  await adapter.write(validBackup);
+  assert.equal(saved, validBackup);
 });
 
 test("storage failures are not reported as an empty state", async () => {

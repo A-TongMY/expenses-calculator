@@ -93,7 +93,6 @@ main { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 4rem; }
   .topbar-inner { flex-wrap: wrap; }
   .account-controls { flex: 1 0 100%; justify-content: flex-end; margin-left: 0; }
 }
-.conflict-panel p { margin-top: 0; }
 .save-recovery { margin: 0 0 1rem; color: var(--negative); }
 .save-recovery p { margin: 0 0 0.5rem; }
 

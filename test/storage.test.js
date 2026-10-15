@@ -41,7 +41,42 @@ const responseJson = (body, status = 200, headers = {}) =>
     headers: { "content-type": "application/json", ...headers },
   });
 
-test("loadState returns validated remote data and its ETag", async () => {
+test("loadState reads valid data without requiring version metadata", async () => {
+  const client = createStorageClient({
+    fetchImpl: async () => responseJson({ backup: validBackup }),
+  });
+  assert.deepEqual(await client.loadState(), { status: "loaded", state: validState });
+});
+
+test("saveState accepts an acknowledgement without version metadata", async () => {
+  const client = createStorageClient({
+    fetchImpl: async () => responseJson({ ok: true }),
+  });
+  assert.equal(await client.saveState(validState), undefined);
+});
+
+test("migration accepts a successful acknowledgement without version metadata", async () => {
+  const client = createStorageClient({
+    fetchImpl: async () => responseJson({ ok: true }),
+  });
+  assert.deepEqual(await client.migrateLegacyState(validBackup), {
+    status: "migrated", state: validState,
+  });
+});
+
+for (const stateVersion of [null, "", " padded ", 123, {}, "*", "a,b", "line\r\nbreak"]) {
+  test(`irrelevant version metadata ${JSON.stringify(stateVersion)} does not block loading or saving`, async () => {
+    const client = createStorageClient({
+      fetchImpl: async () => responseJson({
+        backup: validBackup, ok: true, stateVersion,
+      }, 200, { etag: '"valid-header"' }),
+    });
+    assert.deepEqual(await client.loadState(), { status: "loaded", state: validState });
+    await client.saveState(validState);
+  });
+}
+
+test("loadState returns validated remote data", async () => {
   const client = createStorageClient({
     fetchImpl: async () => responseJson({ backup: validBackup }, 200, { etag: '"v1"' }),
     storage: memoryStorage(),
@@ -50,11 +85,10 @@ test("loadState returns validated remote data and its ETag", async () => {
   assert.deepEqual(await client.loadState(), {
     status: "loaded",
     state: validState,
-    etag: '"v1"',
   });
 });
 
-test("loadState propagates the remote upgrade notice without changing the ETag", async () => {
+test("loadState propagates the remote upgrade notice", async () => {
   const notice = "Older check-ins were removed; other saved data was kept.";
   const client = createStorageClient({
     fetchImpl: async () =>
@@ -65,7 +99,6 @@ test("loadState propagates the remote upgrade notice without changing the ETag",
   assert.deepEqual(await client.loadState(), {
     status: "loaded",
     state: validState,
-    etag: '"v1"',
     notice,
   });
 });
@@ -120,7 +153,7 @@ test("invalid remote backup content is rejected", async () => {
   await assert.rejects(client.loadState(), StorageError);
 });
 
-test("saveState sends the validated backup and propagates its ETag", async () => {
+test("saveState sends only the validated backup without conditional headers", async () => {
   let request;
   const client = createStorageClient({
     fetchImpl: async (url, options) => {
@@ -130,15 +163,15 @@ test("saveState sends the validated backup and propagates its ETag", async () =>
     storage: memoryStorage(),
   });
 
-  assert.equal(await client.saveState(validState, '"v1"'), '"v2"');
+  await client.saveState(validState);
   assert.equal(request.url, "/api/state");
   assert.equal(request.options.method, "PUT");
   assert.equal(request.options.credentials, "same-origin");
   assert.equal(request.options.headers.accept, "application/json");
-  assert.equal(request.options.headers["If-Match"], '"v1"');
+  assert.equal(new Headers(request.options.headers).has("if-match"), false);
+  assert.equal(new Headers(request.options.headers).has("if-none-match"), false);
   assert.deepEqual(JSON.parse(request.options.body), {
     backup: validBackup,
-    writeCondition: { etag: '"v1"' },
   });
 });
 
@@ -157,7 +190,7 @@ test("saving malformed Spending lists rejects the state instead of silently clea
   assert.equal(writes, 0);
 });
 
-test("saveState creates the first remote state conditionally when no ETag exists", async () => {
+test("saveState creates the first remote state without a condition", async () => {
   let request;
   const client = createStorageClient({
     fetchImpl: async (url, options) => {
@@ -167,12 +200,12 @@ test("saveState creates the first remote state conditionally when no ETag exists
     storage: memoryStorage(),
   });
 
-  assert.equal(await client.saveState(validState, null), '"v1"');
-  assert.equal(request.options.headers["If-None-Match"], "*");
-  assert.deepEqual(JSON.parse(request.options.body).writeCondition, { onlyIfNew: true });
+  await client.saveState(validState);
+  assert.equal(new Headers(request.options.headers).has("if-none-match"), false);
+  assert.deepEqual(JSON.parse(request.options.body), { backup: validBackup });
 });
 
-test("migration creates state conditionally and returns its ETag", async () => {
+test("migration creates state conditionally", async () => {
   let request;
   const client = createStorageClient({
     fetchImpl: async (url, options) => {
@@ -185,11 +218,19 @@ test("migration creates state conditionally and returns its ETag", async () => {
   assert.deepEqual(await client.migrateLegacyState(validBackup), {
     status: "migrated",
     state: validState,
-    etag: '"v1"',
   });
+
   assert.equal(request.options.headers["If-None-Match"], "*");
   assert.deepEqual(JSON.parse(request.options.body).writeCondition, { onlyIfNew: true });
 });
+
+for (const body of [null, {}, { ok: false }, { backup: validBackup }]) {
+  test(`a malformed save acknowledgement ${JSON.stringify(body)} is not success`, async () => {
+    const client = createStorageClient({ fetchImpl: async () => responseJson(body, 200, { etag: '"v1"' }) });
+    await assert.rejects(client.saveState(validState), StorageError);
+    await assert.rejects(client.migrateLegacyState(validBackup), StorageError);
+  });
+}
 
 test("a competing initial migration is reported as a conflict", async () => {
   const client = createStorageClient({

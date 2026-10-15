@@ -9,7 +9,10 @@ import {
   isMonth,
   isValidHouse,
 } from "./rules.js";
-import { el, focusRowAction, icon, iconButton } from "./ui.js";
+import {
+  cloneEntryForm, discardForm, el, focusAction, focusRowAction, formSnapshot,
+  icon, iconButton, keepViewport, syncRows,
+} from "./ui.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -27,17 +30,12 @@ const STATUS = {
 
 export function setupHouses({ getState, commit, newId, notify }) {
   const form = byId("house-form");
-  const field = (name) => form.elements.namedItem(name);
-  const addPanel = byId("house-add");
-  const heading = byId("house-form-heading");
-  const submit = byId("house-submit");
-  const cancel = byId("house-cancel");
-  const hint = byId("house-hint");
   const list = byId("house-list");
   const emptyMessage = byId("house-empty");
   const overview = byId("houses-overview");
-  const addHeading = heading.textContent;
   let editingId = null;
+  let editForm = null;
+  let editBaseline = "";
   const openHouses = new Set();
   const openSchedules = new Set();
 
@@ -46,10 +44,10 @@ export function setupHouses({ getState, commit, newId, notify }) {
 
   const find = (id) => getState().houses.find((house) => house.id === id);
 
-  function readItem() {
-    const value = (name) => field(name).value;
+  function readItem(target, id = null) {
+    const value = (name) => target.elements.namedItem(name).value;
     const item = {
-      id: editingId ?? newId(),
+      id: id ?? newId(),
       name: value("name").trim(),
       loan: Number(value("loan")),
       ratePercent: Number(value("ratePercent")),
@@ -61,12 +59,12 @@ export function setupHouses({ getState, commit, newId, notify }) {
     return item;
   }
 
-  function clearValidity() {
-    for (const control of form.elements) control.setCustomValidity?.("");
+  function clearValidity(target) {
+    for (const control of target.elements) control.setCustomValidity?.("");
   }
 
-  function updateHint() {
-    const item = readItem();
+  function updateHint(target) {
+    const item = readItem(target);
     const parts = [];
     const usable =
       item.loan > 0 && Number.isFinite(item.ratePercent) && item.ratePercent >= 0 &&
@@ -77,24 +75,29 @@ export function setupHouses({ getState, commit, newId, notify }) {
     if (item.price !== undefined && item.loan > 0 && item.price >= item.loan) {
       parts.push(`down ${money.format(item.price - item.loan)}`);
     }
-    hint.textContent = parts.join(" ");
+    target.querySelector(".hint").textContent = parts.join(" ");
+  }
+
+  function closeEdit() {
+    editForm?.remove();
+    editForm = null;
+    editingId = null;
   }
 
   function reset() {
-    // Finishing an edit folds the form away; adding keeps it open for the next house.
-    if (editingId !== null) addPanel.open = false;
-    editingId = null;
+    closeEdit();
     form.reset();
-    clearValidity();
-    heading.textContent = addHeading;
-    cancel.hidden = true;
-    updateHint();
+    clearValidity(form);
+    updateHint(form);
   }
 
   function startEdit(id) {
     const house = find(id);
-    if (!house) return;
+    if (!house || editingId === id || !discardForm(editForm, editBaseline)) return;
+    closeEdit();
     editingId = id;
+    editForm = cloneEntryForm(form);
+    const field = (name) => editForm.elements.namedItem(name);
     field("name").value = house.name;
     field("price").value = house.price ?? "";
     field("loan").value = house.loan;
@@ -102,12 +105,14 @@ export function setupHouses({ getState, commit, newId, notify }) {
     field("years").value = house.termMonths / 12;
     field("startMonth").value = house.startMonth;
     field("installment").value = house.installment ?? "";
-    heading.textContent = "Edit house";
-    cancel.hidden = false;
-    addPanel.open = true;
-    clearValidity();
-    updateHint();
-    field("name").focus();
+    editForm.setAttribute("aria-label", `Edit ${house.name}`);
+    editForm.querySelector('[type="submit"]').textContent = "Save";
+    bindForm(editForm, id);
+    editBaseline = formSnapshot(editForm);
+    const card = [...list.children].find((node) => node.dataset.id === id);
+    card.open = true;
+    openHouses.add(id);
+    card.querySelector(".panel-body").append(editForm);
   }
 
   function remove(id) {
@@ -120,10 +125,14 @@ export function setupHouses({ getState, commit, newId, notify }) {
       return;
     }
     if (!confirm(`Delete "${house.name}"?`)) return;
-    if (editingId === id) reset();
-    openHouses.delete(id);
-    openSchedules.delete(id);
-    commit({ ...getState(), houses: getState().houses.filter((other) => other.id !== id) });
+    if (editingId === id && !discardForm(editForm, editBaseline)) return;
+    keepViewport(() => {
+      if (editingId === id) closeEdit();
+      openHouses.delete(id);
+      openSchedules.delete(id);
+      commit({ ...getState(), houses: getState().houses.filter((other) => other.id !== id) });
+      focusAction(list.querySelector("button") ?? list);
+    });
   }
 
   function scheduleTable(summary) {
@@ -238,8 +247,8 @@ export function setupHouses({ getState, commit, newId, notify }) {
 
   function render() {
     const { houses } = getState();
-    if (editingId && !find(editingId)) reset();
-    list.replaceChildren(...houses.map(buildCard));
+    if (editingId && !find(editingId)) closeEdit();
+    syncRows(list, houses, buildCard, editingId);
     emptyMessage.hidden = houses.length > 0;
     overview.hidden = houses.length === 0;
     if (houses.length > 0) {
@@ -252,60 +261,68 @@ export function setupHouses({ getState, commit, newId, notify }) {
     }
   }
 
-  form.addEventListener("input", () => {
-    clearValidity();
-    updateHint();
-  });
-  cancel.addEventListener("click", () => {
-    const house = find(editingId);
-    reset();
-    addPanel.open = false;
-    if (house) focusRowAction(list, house.id, `Edit ${house.name}`);
-  });
+  function bindForm(form, id = null) {
+    const field = (name) => form.elements.namedItem(name);
+    form.addEventListener("input", () => {
+      clearValidity(form);
+      updateHint(form);
+    });
+    if (id) form.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+      if (!discardForm(editForm, editBaseline)) return;
+      keepViewport(() => {
+        closeEdit();
+        focusRowAction(list, id, `Edit ${find(id).name}`);
+      });
+    });
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    clearValidity();
-    const item = readItem();
-    const problem = (name, message) => field(name).setCustomValidity(message);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      clearValidity(form);
+      const item = readItem(form, id);
+      const problem = (name, message) => field(name).setCustomValidity(message);
 
-    if (!item.name) problem("name", "Enter a name.");
-    if (!isMonth(item.startMonth)) problem("startMonth", "Use the format YYYY-MM, for example 2024-03.");
-    if (item.price !== undefined && item.loan > item.price) {
-      problem("loan", "The loan cannot be more than the property price.");
-    }
-    if (!(item.termMonths >= 1 && item.termMonths <= MAX_TERM_MONTHS)) {
-      problem("years", `Enter a term between 1 month and ${MAX_TERM_MONTHS / 12} years.`);
-    }
-    if (item.installment !== undefined && item.installment <= 0) {
-      problem("installment", "Enter an amount above zero, or leave it empty.");
-    } else if (item.installment !== undefined && item.loan > 0 && !repaysInFull(item)) {
-      problem("installment", "This installment is too small to repay the loan within 100 years.");
-    }
-    if (!form.reportValidity()) return;
+      if (!item.name) problem("name", "Enter a name.");
+      if (!isMonth(item.startMonth)) problem("startMonth", "Use the format YYYY-MM, for example 2024-03.");
+      if (item.price !== undefined && item.loan > item.price) {
+        problem("loan", "The loan cannot be more than the property price.");
+      }
+      if (!(item.termMonths >= 1 && item.termMonths <= MAX_TERM_MONTHS)) {
+        problem("years", `Enter a term between 1 month and ${MAX_TERM_MONTHS / 12} years.`);
+      }
+      if (item.installment !== undefined && item.installment <= 0) {
+        problem("installment", "Enter an amount above zero, or leave it empty.");
+      } else if (item.installment !== undefined && item.loan > 0 && !repaysInFull(item)) {
+        problem("installment", "This installment is too small to repay the loan within 100 years.");
+      }
+      if (!form.reportValidity()) return;
 
-    if (!isValidHouse(item)) {
-      problem("name", "Some of these values are not valid. Check them and try again.");
-      form.reportValidity();
-      return;
-    }
-    const { houses } = getState();
-    const next = editingId
-      ? houses.map((other) => (other.id === editingId ? item : other))
-      : [...houses, item];
-    if (next.length > MAX_HOUSES) {
-      problem("name", `That would go over the limit of ${MAX_HOUSES} houses.`);
-      form.reportValidity();
-      return;
-    }
-    const wasEditing = editingId !== null;
-    reset();
-    openHouses.add(item.id);
-    commit({ ...getState(), houses: next });
-    if (wasEditing) focusRowAction(list, item.id, `Edit ${item.name}`);
-    else field("name").focus();
-  });
+      if (!isValidHouse(item)) {
+        problem("name", "Some of these values are not valid. Check them and try again.");
+        form.reportValidity();
+        return;
+      }
+      const { houses } = getState();
+      const next = id
+        ? houses.map((other) => (other.id === id ? item : other))
+        : [...houses, item];
+      if (next.length > MAX_HOUSES) {
+        problem("name", `That would go over the limit of ${MAX_HOUSES} houses.`);
+        form.reportValidity();
+        return;
+      }
+      keepViewport(() => {
+        if (id) closeEdit();
+        else { form.reset(); updateHint(form); }
+        openHouses.add(item.id);
+        commit({ ...getState(), houses: next });
+        if (id) focusRowAction(list, item.id, `Edit ${item.name}`);
+        else focusAction(form.querySelector('[type="submit"]'));
+      });
+    });
 
-  updateHint();
+    updateHint(form);
+  }
+  list.tabIndex = -1;
+  bindForm(form);
   return { render, reset };
 }

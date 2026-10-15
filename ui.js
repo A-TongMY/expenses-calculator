@@ -48,7 +48,51 @@ export function focusRowAction(list, id, label) {
   const row = [...list.children].find((node) => node.dataset.id === id);
   const action = row && [...row.querySelectorAll("button")]
     .find((button) => button.getAttribute("aria-label") === label);
-  action?.focus();
+  action?.focus({ preventScroll: true });
+}
+
+export function cloneEntryForm(template) {
+  const form = template.cloneNode(true);
+  const cancel = form.querySelector('[data-role="cancel"], [id$="-cancel"]');
+  form.removeAttribute("id");
+  form.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+  form.reset();
+  form.hidden = false;
+  form.classList.add("inline-editor");
+  if (cancel) {
+    cancel.hidden = false;
+    cancel.dataset.action = "cancel";
+  }
+  return form;
+}
+
+export function formSnapshot(form) {
+  return JSON.stringify([...form.elements].filter((node) => node.name)
+    .map((node) => [node.name, node.value, node.checked]));
+}
+
+export function discardForm(form, baseline) {
+  return !form || formSnapshot(form) === baseline || confirm("Discard unsaved entry changes?");
+}
+
+export function keepViewport(operation) {
+  const { scrollX, scrollY } = window;
+  operation();
+  window.scrollTo(scrollX, scrollY);
+}
+
+export function focusAction(node) {
+  node?.focus({ preventScroll: true });
+}
+
+export function syncRows(list, items, build, retainedId = null) {
+  const retained = [...list.children].find((node) => node.dataset.id === retainedId);
+  const rows = items.map((item) => item.id === retainedId && retained ? retained : build(item));
+  const wanted = new Set(rows);
+  for (const child of [...list.children]) if (!wanted.has(child)) child.remove();
+  rows.forEach((row, index) => {
+    if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
+  });
 }
 
 // Remembers which panels are open. Kept apart from the saved data, so backups never carry it.

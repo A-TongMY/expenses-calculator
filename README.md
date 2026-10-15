@@ -10,6 +10,8 @@ Spending records dated payments under Lifestyle categories. Add, edit, or delete
 
 Spending shows the filtered total, entry count, average per calendar day, and category chart. The average uses every day in the selected month, including leap days, not just elapsed days. Home shows the current month across all categories, independently of Spending filters. Actual-versus-estimate comparisons use only recorded category/month pairs and current category names and estimates.
 
+Entry edits open inside their row/card in Spending, Expenses, Houses, and Renovation rather than reusing the Add fields. Add drafts are retained separately. Save/Cancel and successful Add actions do not focus another text/date field or scroll back to Add; keyboard focus returns to a nearby action without scrolling. Invalid submissions still identify the affected field. Dirty edits require confirmation before cancellation or switching editors; Spending filter changes also ask before discarding an edit. If a saved Spending entry moves outside the filters, confirmation stays in the entry list.
+
 Each entry requires a real date, an existing category, a positive amount up to MYR 1,000,000,000, and a nonblank description of at most 500 characters. Descriptions are trimmed when submitted. Spending is limited to 2,000 entries; backup files remain limited to 2 MiB. Entries must be inside their category's inclusive active months. Renaming a category updates linked entries; deleting a referenced category or shortening its period past an entry is blocked until those entries are moved or deleted.
 
 ## Renovation
@@ -23,6 +25,8 @@ An actual-cost item can have one equal-monthly installment plan with a start mon
 Actual payment dates must be today or earlier in **Asia/Kuala_Lumpur**. Renovation uses this accounting zone in both browser and server; other pages retain their existing date behavior. A remaining installment is due during its month and overdue only after that month ends. Passing a due date never records payment. Due and overdue are portions of outstanding, not additional costs.
 
 Item, plan, and payment edits are drafts. Use **Stage payment** to add/update a payment in the draft, then **Save all changes** to apply the whole item together. Unlinking payments and adjusting a plan can be done in one validated save. Stage or cancel unfinished payment input before saving the item; cancelling item changes discards its draft without changing saved data. Referenced houses/categories cannot be deleted. Item deletion requires confirmation and removes that item's payments and plan.
+
+Existing renovation items are edited inside their cards, category names inside category cards, and staged payments inside payment rows. An unfinished new-item draft is restored after editing an existing item. Editing a staged payment also preserves unfinished Add-payment values; those values must still be staged or cancelled before saving the whole item.
 
 Renovation and Home share the same overview calculations. Home shows a separate panel for each house with renovation items. Renovation does not affect Expenses, Spending, remaining income, mortgage calculations, or projections.
 
@@ -43,6 +47,8 @@ npm run build    # creates the allowlisted static site in dist/
 Without the Netlify environment variables below, authentication and state endpoints fail closed; the app does not replace remote data with an empty state. Automated tests use mock credentials and storage. Do not enter real expense data in an unconfigured local environment.
 
 For UI regressions, open the URL printed by `npm run test:ui` in a browser. The page displays pass/fail results using the real forms and page modules with synthetic data only; no sign-in or remote account is used. It checks Spending focus and draft preservation, Expenses/Houses edit recovery, Renovation dropdown/panel stability, and all-page control alignment at the current viewport. Reload at phone and desktop widths. For an expanded responsive check, call `runLayoutChecks({ textSize: 24 })` in that page's developer console; the returned `errors` list must be empty. The test page/fixtures are not production assets. Stop the loopback server with Ctrl+C when finished.
+
+Date/month fields use app-controlled box styling while retaining native date pickers. Verify their size and left alignment in iPhone Safari as well as desktop browsers; a narrow desktop viewport does not emulate iOS native date rendering.
 
 ## Deploy to Netlify
 

@@ -6,7 +6,10 @@ import {
   deleteRenovationCategory, renovationReport,
 } from "./renovation.js";
 import { renderRenovationSummary } from "./renovation-summary.js";
-import { el, syncSelectOptions } from "./ui.js";
+import {
+  cloneEntryForm, discardForm, el, focusAction, formSnapshot, keepViewport,
+  syncRows, syncSelectOptions,
+} from "./ui.js";
 
 export function createRenovationEditor({ getState, commit, newId }) {
   let draft = null;
@@ -122,7 +125,9 @@ export function setupRenovation({ getState, commit, newId }) {
   const editorHost = byId("renovation-editor");
   const list = byId("renovation-list");
   const message = byId("renovation-message");
-  const editor = createRenovationEditor({ getState, commit, newId });
+  let editor = createRenovationEditor({ getState, commit, newId });
+  let addSession = null;
+  let editingItemId = null;
   let selectedHouse = "";
   let categoryEditingId = null;
   let paymentEditingId = null;
@@ -130,12 +135,29 @@ export function setupRenovation({ getState, commit, newId }) {
   let paymentForm = null;
   let paymentList = null;
   let paymentBaseline = null;
+  let paymentHome = null;
+  let paymentAddDraft = null;
+  let categoryEditForm = null;
+  let categoryBaseline = "";
   const expanded = new Set();
   categoryName.maxLength = MAX_NAME_LENGTH;
 
-  const inform = (error) => { message.textContent = error.message; };
-  const attempt = (operation) => {
-    try { operation(); message.textContent = ""; } catch (error) { inform(error); }
+  const inform = (error, host = null) => {
+    if (!host) { message.textContent = error.message; return; }
+    let status = host.querySelector('[role="status"]');
+    if (!status) {
+      status = el("p", "notice");
+      status.setAttribute("role", "status");
+      host.append(status);
+    }
+    status.textContent = error.message;
+  };
+  const attempt = (operation, host = null) => {
+    try {
+      operation();
+      message.textContent = "";
+      host?.querySelector('[role="status"]')?.remove();
+    } catch (error) { inform(error, host); }
   };
   const discardAllowed = () => !editor.isDirty() || confirm("Discard unsaved renovation item and payment changes?");
   const clearEditor = () => {
@@ -145,10 +167,38 @@ export function setupRenovation({ getState, commit, newId }) {
     paymentList = null;
     paymentEditingId = null;
     paymentBaseline = null;
+    paymentAddDraft = null;
+    editingItemId = null;
     message.textContent = "";
     editorHost.replaceChildren();
     editorHost.hidden = true;
+    byId("renovation-add-item").parentElement.after(editorHost);
+    if (addSession) {
+      ({
+        editor, itemForm, paymentForm, paymentList, paymentHome, paymentBaseline,
+        paymentAddDraft, paymentEditingId,
+      } = addSession);
+      editorHost.replaceChildren(...addSession.nodes);
+      editorHost.hidden = false;
+      addSession = null;
+    }
   };
+
+  function finishItem() {
+    const id = editingItemId;
+    keepViewport(() => {
+      clearEditor();
+      render();
+      const card = [...list.children].find((node) => node.dataset.id === id);
+      focusAction(card?.querySelector('[data-action="edit-item"]') ?? byId("renovation-add-item"));
+    });
+  }
+
+  function closeCategory() {
+    categoryEditForm?.remove();
+    categoryEditForm = null;
+    categoryEditingId = null;
+  }
 
   function readDraftFields() {
     const snapshot = editor.snapshot();
@@ -180,32 +230,48 @@ export function setupRenovation({ getState, commit, newId }) {
       row.append(
         el("span", "", `${dateLabel(payment.date)} / ${payment.kind} / ${money.format(payment.amount)}${payment.installmentMonth ? ` / ${monthLabel(payment.installmentMonth)}` : " / Unlinked"}`),
         button("Edit payment", () => {
-          if (paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
+          if (paymentEditingId === payment.id) return;
+          if (paymentEditingId && paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
+          if (!paymentEditingId) paymentAddDraft = { values: paymentValues(), baseline: paymentBaseline };
           paymentEditingId = payment.id;
           for (const key of ["date", "amount", "kind", "installmentMonth"]) {
             paymentForm.elements.namedItem(key).value = payment[key] ?? "";
           }
           rememberPaymentFields();
-          paymentForm.elements.namedItem("amount").focus();
+          paymentForm.classList.add("inline-editor");
+          row.append(paymentForm);
         }),
         button("Unlink", () => {
           const { installmentMonth, ...unlinked } = payment;
-          editor.setPayments(draft.payments.map((entry) => entry.id === payment.id ? unlinked : entry));
-          renderDraftPayments();
+          keepViewport(() => {
+            editor.setPayments(editor.snapshot().payments.map((entry) => entry.id === payment.id ? unlinked : entry));
+            renderDraftPayments();
+          });
         }),
         button("Remove payment", () => {
           if (!confirm("Remove this payment from the draft? It is applied only when you save all changes.")) return;
-          editor.setPayments(draft.payments.filter(({ id }) => id !== payment.id));
-          if (paymentEditingId === payment.id) resetPayment();
-          renderDraftPayments();
+          if (paymentEditingId === payment.id && paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
+          keepViewport(() => {
+            editor.setPayments(editor.snapshot().payments.filter(({ id }) => id !== payment.id));
+            if (paymentEditingId === payment.id) resetPayment();
+            renderDraftPayments();
+            focusAction(paymentList.querySelector("button") ?? paymentHome.querySelector("button"));
+          });
         }),
       );
+      row.dataset.id = payment.id;
       paymentList.append(row);
+      if (paymentEditingId === payment.id) row.append(paymentForm);
     }
   }
 
   function paymentFieldsChanged() {
     return JSON.stringify(paymentValues()) !== paymentBaseline;
+  }
+
+  function unfinishedPayment() {
+    return paymentFieldsChanged() || Boolean(paymentAddDraft &&
+      JSON.stringify(paymentAddDraft.values) !== paymentAddDraft.baseline);
   }
 
   function paymentValues() {
@@ -215,14 +281,25 @@ export function setupRenovation({ getState, commit, newId }) {
 
   function rememberPaymentFields() {
     paymentBaseline = JSON.stringify(paymentValues());
-    editor.setPaymentDirty(false);
+    editor.setPaymentDirty(unfinishedPayment());
   }
 
   function resetPayment() {
     paymentEditingId = null;
-    paymentForm.reset();
-    paymentForm.elements.namedItem("date").value = renovationDate();
-    rememberPaymentFields();
+    paymentHome.append(paymentForm);
+    paymentForm.classList.remove("inline-editor");
+    if (paymentAddDraft) {
+      ["date", "amount", "kind", "installmentMonth"].forEach((key, index) => {
+        paymentForm.elements.namedItem(key).value = paymentAddDraft.values[index];
+      });
+      paymentBaseline = paymentAddDraft.baseline;
+      paymentAddDraft = null;
+      editor.setPaymentDirty(paymentFieldsChanged());
+    } else {
+      paymentForm.reset();
+      paymentForm.elements.namedItem("date").value = renovationDate();
+      rememberPaymentFields();
+    }
   }
 
   function syncDraftCategories() {
@@ -240,7 +317,22 @@ export function setupRenovation({ getState, commit, newId }) {
   }
 
   function openEditor(itemId) {
-    if (!discardAllowed()) return;
+    if (itemId && editingItemId === itemId) return;
+    if (!itemId && itemForm && !editingItemId) return;
+    if (editingItemId) {
+      if (!discardAllowed()) return;
+      clearEditor();
+      if (!itemId && itemForm) return;
+    }
+    if (itemId && itemForm && !editingItemId) {
+      addSession = {
+        editor, itemForm, paymentForm, paymentList, paymentHome, paymentBaseline,
+        paymentAddDraft, paymentEditingId, nodes: [...editorHost.childNodes],
+      };
+      editorHost.replaceChildren();
+      editor = createRenovationEditor({ getState, commit, newId });
+    }
+    editingItemId = itemId ?? null;
     if (itemId) editor.start(itemId);
     else {
       const category = getState().renovationCategories.find((entry) => entry.houseId === selectedHouse);
@@ -289,8 +381,7 @@ export function setupRenovation({ getState, commit, newId }) {
       save,
       button("Cancel item changes", () => {
         if (!discardAllowed()) return;
-        clearEditor();
-        render();
+        finishItem();
       }),
     );
     itemForm.addEventListener("input", readDraftFields);
@@ -300,9 +391,8 @@ export function setupRenovation({ getState, commit, newId }) {
       attempt(() => {
         readDraftFields();
         editor.save();
-        clearEditor();
-        render();
-      });
+        finishItem();
+      }, editorHost);
     });
     paymentForm = el("form", "renovation-form");
     const date = input("date", "date", renovationDate());
@@ -323,11 +413,19 @@ export function setupRenovation({ getState, commit, newId }) {
     paymentForm.append(
       labeled("Payment date", date), labeled("Payment amount", paymentAmount),
       labeled("Payment label", kind), labeled("Linked installment month (optional)", installment),
-      stage, button("Cancel payment edit", resetPayment),
+      stage, button("Cancel payment edit", () => {
+        if (paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
+        const id = paymentEditingId;
+        keepViewport(() => {
+          resetPayment();
+          const row = [...paymentList.children].find((node) => node.dataset.id === id);
+          focusAction(row?.querySelector("button") ?? stage);
+        });
+      }),
     );
     rememberPaymentFields();
     for (const event of ["input", "change"]) {
-      paymentForm.addEventListener(event, () => editor.setPaymentDirty(paymentFieldsChanged()));
+      paymentForm.addEventListener(event, () => editor.setPaymentDirty(unfinishedPayment()));
     }
     paymentForm.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -343,33 +441,44 @@ export function setupRenovation({ getState, commit, newId }) {
         editor.setPayments(paymentEditingId
           ? draft.payments.map((entry) => entry.id === paymentEditingId ? payment : entry)
           : [...draft.payments, payment]);
-        resetPayment();
-        renderDraftPayments();
-      });
+        const id = paymentEditingId;
+        keepViewport(() => {
+          resetPayment();
+          renderDraftPayments();
+          const row = [...paymentList.children].find((node) => node.dataset.id === id);
+          focusAction(row?.querySelector("button") ?? stage);
+        });
+      }, editorHost);
     });
     paymentList = el("ul", "renovation-payments");
+    paymentHome = el("div");
+    paymentHome.append(paymentForm);
     editorHost.replaceChildren(
       el("h2", "", itemId ? "Edit renovation item" : "New renovation item"),
       el("p", "note", "Item, plan, and payment changes are staged. Use Save all changes to apply them together. Deposits reduce the balance; passing an installment date never records payment."),
-      itemForm, el("h3", "", "Actual payments"), paymentList, paymentForm,
+      itemForm, el("h3", "", "Actual payments"), paymentList, paymentHome,
     );
     renderDraftPayments();
-    name.focus();
+    if (itemId) {
+      const card = [...list.children].find((node) => node.dataset.id === itemId);
+      card.open = true;
+      expanded.add(itemId);
+      card.querySelector(".panel-body").append(editorHost);
+    }
   }
 
   categoryForm.addEventListener("submit", (event) => {
     event.preventDefault();
     attempt(() => {
       commit(saveRenovationCategory(getState(), {
-        id: categoryEditingId ?? newId(), houseId: selectedHouse, name: categoryName.value.trim(),
+        id: newId(), houseId: selectedHouse, name: categoryName.value.trim(),
       }));
-      categoryEditingId = null;
       categoryForm.reset();
       render();
+      focusAction(categoryForm.querySelector('[type="submit"]'));
     });
   });
   byId("renovation-category-cancel").addEventListener("click", () => {
-    categoryEditingId = null;
     categoryForm.reset();
   });
   byId("renovation-add-item").addEventListener("click", () => attempt(() => openEditor()));
@@ -377,8 +486,15 @@ export function setupRenovation({ getState, commit, newId }) {
   function selectHouse(id) {
     if (id === selectedHouse) return true;
     if (!getState().houses.some((house) => house.id === id)) return false;
+    if (!discardForm(categoryEditForm, categoryBaseline)) { houseSelect.value = selectedHouse; return false; }
     if (!discardAllowed()) { houseSelect.value = selectedHouse; return false; }
+    if (addSession?.editor.isDirty() && !confirm("Discard unsaved new renovation item changes?")) {
+      houseSelect.value = selectedHouse;
+      return false;
+    }
+    addSession = null;
     clearEditor();
+    closeCategory();
     selectedHouse = id;
     categoryEditingId = null;
     categoryForm.reset();
@@ -406,34 +522,80 @@ export function setupRenovation({ getState, commit, newId }) {
     const openCategories = new Set(
       [...categoriesHost.children].filter((card) => card.open).map((card) => card.dataset.id),
     );
-    categoriesHost.replaceChildren();
-    for (const category of report.categories) {
+    const buildCategory = (category) => {
       const card = el("details", "panel");
       card.dataset.id = category.categoryId;
       card.open = openCategories.has(category.categoryId);
       const summary = el("summary", "", category.name);
       const content = el("div", "panel-body cards");
-      renderRenovationSummary(content, category);
+      const figures = el("div", "cards");
+      figures.dataset.role = "category-summary";
+      renderRenovationSummary(figures, category);
+      content.append(figures);
       content.append(
         button("Rename category", () => {
+          if (categoryEditingId === category.categoryId) return;
+          if (!discardForm(categoryEditForm, categoryBaseline)) return;
+          closeCategory();
           categoryEditingId = category.categoryId;
-          categoryName.value = category.name;
-          categoryName.focus();
+          categoryEditForm = cloneEntryForm(categoryForm);
+          const form = categoryEditForm;
+          form.setAttribute("aria-label", `Rename ${category.name}`);
+          form.elements.namedItem("name").value = category.name;
+          form.querySelector('[type="submit"]').textContent = "Save";
+          form.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+            if (!discardForm(form, categoryBaseline)) return;
+            keepViewport(() => {
+              closeCategory();
+              focusAction(content.querySelector("button"));
+            });
+          });
+          form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            attempt(() => {
+              const next = saveRenovationCategory(getState(), {
+                id: category.categoryId, houseId: selectedHouse,
+                name: form.elements.namedItem("name").value.trim(),
+              });
+              keepViewport(() => {
+                closeCategory();
+                commit(next);
+                render();
+                const saved = [...categoriesHost.children].find((node) => node.dataset.id === category.categoryId);
+                focusAction(saved?.querySelector("button"));
+              });
+            }, form);
+          });
+          categoryBaseline = formSnapshot(form);
+          content.append(form);
         }),
         button("Delete category", () => attempt(() => {
           if (!confirm(`Delete category "${category.name}"?`)) return;
-          commit(deleteRenovationCategory(getState(), category.categoryId));
-          render();
+          if (categoryEditingId === category.categoryId && !discardForm(categoryEditForm, categoryBaseline)) return;
+          const next = deleteRenovationCategory(getState(), category.categoryId);
+          keepViewport(() => {
+            if (categoryEditingId === category.categoryId) closeCategory();
+            commit(next);
+            render();
+            focusAction(categoriesHost.querySelector("button") ?? categoryForm.querySelector('[type="submit"]'));
+          });
         })),
       );
       card.append(summary, content);
-      categoriesHost.append(card);
+      return card;
+    };
+    syncRows(categoriesHost, report.categories.map((category) => ({ ...category, id: category.categoryId })),
+      buildCategory, categoryEditingId);
+    if (categoryEditingId) {
+      const category = report.categories.find(({ categoryId }) => categoryId === categoryEditingId);
+      const card = [...categoriesHost.children].find((node) => node.dataset.id === categoryEditingId);
+      if (category && card) renderRenovationSummary(card.querySelector('[data-role="category-summary"]'), category);
     }
     byId("renovation-add-item").disabled = report.categories.length === 0;
-    list.replaceChildren();
-    for (const entry of report.items) {
+    const buildItem = (entry) => {
       const { item } = entry;
       const card = el("details", "panel");
+      card.dataset.id = item.id;
       card.open = expanded.has(item.id);
       card.addEventListener("toggle", () => {
         if (card.open) expanded.add(item.id); else expanded.delete(item.id);
@@ -450,26 +612,33 @@ export function setupRenovation({ getState, commit, newId }) {
       for (const payment of state.renovationPayments.filter((payment) => payment.itemId === item.id)) {
         content.append(el("p", "note", `${dateLabel(payment.date)} / ${payment.kind} / ${money.format(payment.amount)}${payment.installmentMonth ? ` / ${monthLabel(payment.installmentMonth)}` : " / Unlinked"}`));
       }
+      const edit = button("Edit item and payments", () => attempt(() => openEditor(item.id)));
+      edit.dataset.action = "edit-item";
       content.append(
-        button("Edit item and payments", () => attempt(() => openEditor(item.id))),
+        edit,
         button("Delete item", () => attempt(() => {
           if (!confirm(`Delete "${item.name}" and all its payments and installment plan?`)) return;
           if (editor.snapshot()?.item.id === item.id && !discardAllowed()) return;
-          commit(deleteRenovationItem(getState(), item.id));
-          if (editor.snapshot()?.item.id === item.id) clearEditor();
-          render();
+          keepViewport(() => {
+            if (editor.snapshot()?.item.id === item.id) clearEditor();
+            commit(deleteRenovationItem(getState(), item.id));
+            render();
+            focusAction(list.querySelector("button") ?? byId("renovation-add-item"));
+          });
         })),
       );
       card.append(summary, content);
-      list.append(card);
-    }
+      return card;
+    };
+    syncRows(list, report.items.map((entry) => ({ ...entry, id: entry.item.id })), buildItem, editingItemId);
     byId("renovation-empty").hidden = report.items.length > 0;
   }
 
   function reset() {
+    addSession = null;
     clearEditor();
     categoriesHost.replaceChildren();
-    categoryEditingId = null;
+    closeCategory();
     categoryForm.reset();
     message.textContent = "";
     selectedHouse = "";

@@ -29,6 +29,9 @@ let nextId = 0;
 const byId = (id) => document.getElementById(id);
 const field = (name) => byId("spending-form").elements.namedItem(name);
 const click = (selector) => document.querySelector(selector).click();
+const inlineSpending = () => byId("spending-list").querySelector("form");
+const noEntryFocus = (doc = document) =>
+  !doc.activeElement.matches("input,select,textarea");
 
 function showPage(name) {
   for (const page of ["home", "expenses", "spending", "houses", "renovation"]) {
@@ -78,7 +81,29 @@ async function test(name, operation) {
   }
 }
 
-await test("adding Spending preserves accounting and focuses amount, not a date picker", () => {
+await test("Spending date and month fields use app sizing instead of native themed boxes", () => {
+  for (const control of [field("date"), byId("spending-month")]) {
+    const style = getComputedStyle(control);
+    assert(style.appearance === "none", `${control.type} retains browser-native themed sizing`);
+    assert(style.display === "block", `${control.type} retains inline baseline spacing`);
+    const rect = control.getBoundingClientRect();
+    const amount = field("amount").getBoundingClientRect();
+    assert(Math.abs(rect.height - amount.height) <= 1, `${control.type} height differs from Amount`);
+    const container = control.parentElement.getBoundingClientRect();
+    assert(Math.abs(rect.width - container.width) <= 1, `${control.type} does not fit its field`);
+  }
+});
+
+await test("Spending retains the selected date when saving an entry", () => {
+  field("date").value = "2024-02-29";
+  field("amount").value = "23.45";
+  field("description").value = "Leap day";
+  byId("spending-form").requestSubmit();
+  assert(state.spending.length === 2, "Date styling prevented submitting the entry");
+  assert(state.spending[1].date === "2024-02-29", "Selected date changed during submission");
+});
+
+await test("adding Spending preserves accounting without reopening an input keyboard", () => {
   field("categoryId").value = "fuel";
   field("amount").value = "23.45";
   field("description").value = "Fuel stop";
@@ -86,30 +111,41 @@ await test("adding Spending preserves accounting and focuses amount, not a date 
   assert(state.spending.length === 2 && state.spending[1].amount === 23.45, "Entry was not added correctly");
   assert(state.spending[1].categoryId === "fuel", "Selected category changed");
   assert(field("categoryId").value === "fuel" && field("amount").value === "", "Next-entry defaults changed");
-  assert(document.activeElement === field("amount"), "Add unexpectedly focuses the date picker");
+  assert(noEntryFocus(), "Add reopens an input keyboard");
 });
 
-await test("editing Spending does not activate the calendar", () => {
+await test("editing Spending opens at the row and preserves the Add draft", () => {
+  field("description").value = "New entry draft";
+  field("amount").value = "98";
   click('#spending-list [aria-label="Edit Lunch"]');
-  assert(field("amount").value === "12.34", "Edit did not load the entry");
-  assert(document.activeElement === field("amount"), "Edit unexpectedly focuses the date picker");
+  assert(inlineSpending(), "Edit did not open inside the Spending row");
+  assert(inlineSpending().elements.namedItem("amount").value === "12.34", "Edit did not load the entry");
+  assert(field("description").value === "New entry draft" && field("amount").value === "98", "Edit overwrote the Add draft");
+  assert(noEntryFocus(), "Edit automatically opened an input keyboard");
 });
 
-await test("updating Spending changes one entry and does not activate the calendar", () => {
+await test("updating Spending saves locally without jumping to Add", () => {
   click('#spending-list [aria-label="Edit Lunch"]');
-  field("amount").value = "34.56";
-  byId("spending-form").requestSubmit();
+  assert(inlineSpending(), "Inline Spending editor is missing");
+  inlineSpending().elements.namedItem("amount").value = "34.56";
+  inlineSpending().requestSubmit();
   assert(state.spending.length === 1 && state.spending[0].amount === 34.56, "Update changed accounting behavior");
-  assert(document.activeElement === field("amount"), "Update unexpectedly focuses the date picker");
-  assert(byId("spending-message").textContent.startsWith("Entry updated"), "Update incorrectly reports an added entry");
+  assert(!inlineSpending() && noEntryFocus(), "Update left an input focused");
+  assert(byId("spending-list").textContent.includes("Entry updated"), "Update feedback is not local to the list");
 });
 
-await test("cancelling Spending leaves saved data unchanged without calendar activation", () => {
+await test("cancelling Spending leaves saved data and the Add draft unchanged", () => {
+  field("description").value = "Add draft";
   click('#spending-list [aria-label="Edit Lunch"]');
-  field("amount").value = "99";
-  byId("spending-cancel").click();
+  assert(inlineSpending(), "Inline Spending editor is missing");
+  inlineSpending().elements.namedItem("amount").value = "99";
+  const confirm = window.confirm;
+  window.confirm = () => true;
+  try { inlineSpending().querySelector('[data-action="cancel"]').click(); }
+  finally { window.confirm = confirm; }
   assert(state.spending[0].amount === 12.34, "Cancel changed saved data");
-  assert(document.activeElement === field("amount"), "Cancel unexpectedly focuses the date picker");
+  assert(field("description").value === "Add draft", "Cancel changed the Add draft");
+  assert(noEntryFocus(), "Cancel reopened an input keyboard");
 });
 
 await test("deleting Spending leaves the next-entry form usable without calendar activation", () => {
@@ -118,9 +154,25 @@ await test("deleting Spending leaves the next-entry form usable without calendar
   try { click('#spending-list [aria-label="Delete Lunch"]'); }
   finally { window.confirm = confirm; }
   assert(state.spending.length === 0, "Delete did not remove the entry");
-  assert(document.activeElement === field("amount"), "Delete unexpectedly focuses the date picker");
+  assert(noEntryFocus(), "Delete reopened an input keyboard");
 });
 
+await test("Spending inline draft survives rerender and rejected discard", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  const form = inlineSpending();
+  assert(form, "Inline Spending editor is missing");
+  const description = form.elements.namedItem("description");
+  description.value = "Unfinished edit";
+  description.focus();
+  description.setSelectionRange(4, 4);
+  spending.render();
+  assert(inlineSpending() === form && document.activeElement === description && description.selectionStart === 4, "Rerender disrupted the inline editor");
+  const confirm = window.confirm;
+  window.confirm = () => false;
+  try { form.querySelector('[data-action="cancel"]').click(); }
+  finally { window.confirm = confirm; }
+  assert(inlineSpending() === form && description.value === "Unfinished edit", "Rejected discard lost the draft");
+});
 await test("Spending rerender preserves options, selection, draft text, focus and caret", () => {
   field("categoryId").value = "fuel";
   const option = field("categoryId").options[0];
@@ -136,12 +188,81 @@ await test("Spending rerender preserves options, selection, draft text, focus an
   assert(document.activeElement === field("description") && field("description").selectionStart === 5, "Draft focus/caret moved");
 });
 
+await test("Spending save stays at the current scroll position", () => {
+  const spacer = document.createElement("div");
+  spacer.style.height = "1800px";
+  byId("spending-form").before(spacer);
+  window.scrollTo(0, 1100);
+  const before = window.scrollY;
+  assert(before > 0, "Scroll fixture did not scroll");
+  field("amount").value = "45.67";
+  field("description").value = "No jump";
+  byId("spending-form").requestSubmit();
+  assert(Math.abs(window.scrollY - before) <= 1, "Add scrolled away from the completed action");
+});
+
+await test("invalid inline Spending remains editable without changing saved data", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  const form = inlineSpending();
+  form.elements.namedItem("description").value = "   ";
+  form.requestSubmit();
+  assert(inlineSpending() === form && state.spending[0].description === "Lunch", "Invalid inline entry changed saved data or closed");
+  assert(!form.elements.namedItem("description").validity.valid, "Invalid description was not identified locally");
+});
+
+await test("Spending edit outside filters reports success locally without focusing Add", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  const form = inlineSpending();
+  form.elements.namedItem("date").value = "2024-02-29";
+  form.requestSubmit();
+  assert(state.spending[0].date === "2024-02-29", "Date update was not saved");
+  assert(byId("spending-list").textContent.includes("outside these filters"), "Filtered-out save lacks local confirmation");
+  assert(noEntryFocus(), "Filtered-out update focused the Add form");
+});
+
+await test("Spending rejects a filter change that would discard a dirty inline editor", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  const form = inlineSpending();
+  form.elements.namedItem("amount").value = "77";
+  const month = byId("spending-month");
+  const previous = month.value;
+  const confirm = window.confirm;
+  window.confirm = () => false;
+  try {
+    month.value = "2024-02";
+    month.dispatchEvent(new Event("change"));
+  } finally { window.confirm = confirm; }
+  assert(month.value === previous && inlineSpending() === form, "Rejected filter change lost the inline draft");
+});
+
+await test("Spending switching editors respects discard confirmation", () => {
+  state.spending.push({ id: "second", date: currentDate(), categoryId: "food", amount: 5, description: "Second" });
+  spending.render();
+  click('#spending-list [aria-label="Edit Lunch"]');
+  const form = inlineSpending();
+  form.elements.namedItem("amount").value = "77";
+  const confirm = window.confirm;
+  window.confirm = () => false;
+  try { click('#spending-list [aria-label="Edit Second"]'); }
+  finally { window.confirm = confirm; }
+  assert(inlineSpending() === form && form.elements.namedItem("amount").value === "77", "Switch discarded the draft without permission");
+});
+
 await test("category renames update Spending choices without changing a valid selection", () => {
   field("categoryId").value = "fuel";
   state.lifestyle[1].name = "Updated fuel";
   spending.render();
   assert(field("categoryId").value === "fuel", "Rename lost category selection");
   assert(field("categoryId").selectedOptions[0].textContent === "Updated fuel", "Rename was not reflected");
+});
+
+await test("category rename updates the displayed category around a retained Spending editor", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  const form = inlineSpending();
+  state.lifestyle[0].name = "Updated food";
+  spending.render();
+  assert(byId("spending-list").querySelector(".detail").textContent.includes("Updated food"), "Retained row shows an outdated category name");
+  assert(inlineSpending() === form, "Updating the category label replaced the editor");
 });
 
 await test("Renovation keeps an expanded category open after rerender", () => {
@@ -168,6 +289,210 @@ await test("Renovation rerender preserves the house dropdown and unsaved editor 
   assert(name.value === "Unfinished item" && name.selectionStart === 4 && document.activeElement === name, "Editor draft was disrupted");
 });
 
+await test("Renovation item and payment editors stay inside their existing cards and rows", () => {
+  showPage("renovation");
+  const card = byId("renovation-list").querySelector("details");
+  card.open = true;
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const itemForm = card.querySelector('form');
+  assert(itemForm, "Item editor opened outside its card");
+  assert(noEntryFocus(), "Opening the item editor forced the keyboard open");
+  const name = itemForm.elements.namedItem("name");
+  name.value = "Updated cabinets";
+  name.dispatchEvent(new Event("input", { bubbles: true }));
+  name.focus();
+  name.setSelectionRange(4, 4);
+  renovation.render();
+  assert(card.isConnected && card.querySelector("form") === itemForm && document.activeElement === name, "Item rerender replaced the active editor");
+  const paymentRow = card.querySelector(".renovation-payments li");
+  [...paymentRow.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+  const paymentForm = paymentRow.querySelector("form");
+  assert(paymentForm, "Payment edit opened outside its payment row");
+  paymentForm.elements.namedItem("amount").value = "1500";
+  paymentForm.requestSubmit();
+  assert(state.renovationPayments[0].amount === 2000, "Staging prematurely saved the payment");
+  assert(noEntryFocus(), "Staging payment focused another input");
+  itemForm.requestSubmit();
+  assert(state.renovationItems[0].name === "Updated cabinets" && state.renovationPayments[0].amount === 1500, "Item/payment save was not atomic");
+  assert(noEntryFocus(), "Item save reopened the keyboard");
+});
+
+await test("Renovation category rename stays in the category card", () => {
+  showPage("renovation");
+  const add = byId("renovation-category-form");
+  add.elements.namedItem("name").value = "New category draft";
+  const card = byId("renovation-categories").querySelector("details");
+  card.open = true;
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
+  const form = card.querySelector("form");
+  assert(form, "Category rename reused the Add form");
+  form.elements.namedItem("name").value = "Updated kitchen";
+  form.requestSubmit();
+  assert(state.renovationCategories[0].name === "Updated kitchen", "Category rename did not save");
+  assert(add.elements.namedItem("name").value === "New category draft", "Category rename overwrote the Add draft");
+  assert(noEntryFocus(), "Category rename reopened an input keyboard");
+});
+
+await test("Renovation totals stay current while a category rename editor is open", () => {
+  showPage("renovation");
+  const category = byId("renovation-categories").querySelector("details");
+  [...category.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
+  const rename = category.querySelector("form");
+  const item = byId("renovation-list").querySelector("details");
+  [...item.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const form = item.querySelector("form");
+  form.elements.namedItem("budget").value = "9000";
+  form.requestSubmit();
+  assert(category.textContent.includes("9,000.00"), "Retained category shows outdated saved totals");
+  assert(category.querySelector("form") === rename, "Updating totals replaced the category editor");
+});
+
+await test("Renovation restores an unfinished new item after editing an existing item", () => {
+  showPage("renovation");
+  byId("renovation-add-item").click();
+  const add = byId("renovation-editor").querySelector("form");
+  add.elements.namedItem("name").value = "New item draft";
+  add.elements.namedItem("budget").value = "456";
+  add.dispatchEvent(new Event("input", { bubbles: true }));
+  const card = byId("renovation-list").querySelector("details");
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const edit = card.querySelector("form");
+  edit.elements.namedItem("name").value = "Changed cabinets";
+  edit.requestSubmit();
+  assert(byId("renovation-editor").querySelector("form") === add && add.isConnected, "New item draft was not restored");
+  assert(add.elements.namedItem("name").value === "New item draft" && add.elements.namedItem("budget").value === "456", "New item values changed");
+  assert(state.renovationItems.length === 1 && state.renovationItems[0].name === "Changed cabinets", "Editing saved or lost the new item draft");
+});
+
+await test("Renovation payment editing preserves an unfinished new payment", () => {
+  showPage("renovation");
+  const card = byId("renovation-list").querySelector("details");
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const forms = card.querySelectorAll("form");
+  const add = forms[1];
+  add.elements.namedItem("amount").value = "123";
+  add.dispatchEvent(new Event("input", { bubbles: true }));
+  const row = card.querySelector(".renovation-payments li");
+  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+  const edit = row.querySelector("form");
+  edit.elements.namedItem("amount").value = "1500";
+  edit.requestSubmit();
+  assert(!row.contains(add) && add.elements.namedItem("amount").value === "123", "Payment edit lost the Add-payment draft");
+  forms[0].requestSubmit();
+  assert(state.renovationPayments[0].amount === 2000, "Unstaged Add-payment draft did not block item save");
+  assert(card.textContent.includes("Stage or cancel"), "Unstaged payment error was not local");
+});
+
+await test("an unfinished Add-payment draft blocks Save all while editing another payment", () => {
+  showPage("renovation");
+  const card = byId("renovation-list").querySelector("details");
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const item = card.querySelector("form");
+  const payment = card.querySelectorAll("form")[1];
+  payment.elements.namedItem("amount").value = "123";
+  payment.dispatchEvent(new Event("input", { bubbles: true }));
+  const row = card.querySelector(".renovation-payments li");
+  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+  item.requestSubmit();
+  assert(card.contains(item) && row.contains(payment), "Save all discarded the unfinished Add-payment draft");
+  assert(card.textContent.includes("Stage or cancel"), "Hidden unfinished payment did not block Save all");
+});
+
+await test("suspending a new Renovation item preserves its staged-payment edit identity", () => {
+  showPage("renovation");
+  byId("renovation-add-item").click();
+  const addHost = byId("renovation-editor");
+  const itemForm = addHost.querySelector("form");
+  itemForm.elements.namedItem("name").value = "New planned item";
+  itemForm.elements.namedItem("actualCost").value = "500";
+  itemForm.dispatchEvent(new Event("input", { bubbles: true }));
+  const paymentForm = addHost.querySelectorAll("form")[1];
+  paymentForm.elements.namedItem("amount").value = "100";
+  paymentForm.requestSubmit();
+  const row = addHost.querySelector(".renovation-payments li");
+  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+  paymentForm.elements.namedItem("amount").value = "150";
+  const existing = byId("renovation-list").querySelector("details");
+  [...existing.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  existing.querySelector("form").requestSubmit();
+  assert(addHost.querySelector("form") === itemForm, "Suspended new item was not restored");
+  paymentForm.requestSubmit();
+  itemForm.requestSubmit();
+  const saved = state.renovationItems.find((item) => item.name === "New planned item");
+  assert(saved, "Restored new item was not saved");
+  const payments = state.renovationPayments.filter((payment) => payment.itemId === saved.id);
+  assert(payments.length === 1 && payments[0].amount === 150, "Restored payment edit became a new duplicate payment");
+  assert(noEntryFocus(), "New renovation item save reopened an input keyboard");
+});
+
+await test("Renovation payment Cancel restores Add-payment values without changing saved data", () => {
+  showPage("renovation");
+  const card = byId("renovation-list").querySelector("details");
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const row = card.querySelector(".renovation-payments li");
+  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+  const form = row.querySelector("form");
+  form.elements.namedItem("amount").value = "1000";
+  const confirm = window.confirm;
+  window.confirm = () => true;
+  try { [...form.querySelectorAll("button")].find((node) => node.textContent === "Cancel payment edit").click(); }
+  finally { window.confirm = confirm; }
+  assert(state.renovationPayments[0].amount === 2000, "Payment Cancel changed saved data");
+  assert(!row.contains(form) && form.elements.namedItem("amount").value === "", "Payment Cancel did not restore the Add-payment form");
+  assert(noEntryFocus(), "Payment Cancel reopened an input keyboard");
+});
+
+await test("Renovation category Cancel preserves both saved name and Add draft", () => {
+  showPage("renovation");
+  const add = byId("renovation-category-form");
+  add.elements.namedItem("name").value = "Add draft";
+  const card = byId("renovation-categories").querySelector("details");
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
+  const form = card.querySelector("form");
+  form.elements.namedItem("name").value = "Unsaved rename";
+  const confirm = window.confirm;
+  window.confirm = () => true;
+  try { form.querySelector('[data-action="cancel"]').click(); }
+  finally { window.confirm = confirm; }
+  assert(state.renovationCategories[0].name === "Kitchen" && add.elements.namedItem("name").value === "Add draft", "Category Cancel changed saved or Add values");
+  assert(!card.querySelector("form") && noEntryFocus(), "Category Cancel did not finish locally");
+});
+
+await test("inline Spending and House forms do not duplicate document IDs", () => {
+  click('#spending-list [aria-label="Edit Lunch"]');
+  showPage("houses");
+  click('#house-list [aria-label="Edit House One"]');
+  const ids = [...document.querySelectorAll("[id]")].map((node) => node.id);
+  assert(new Set(ids).size === ids.length, "Inline forms duplicated document IDs");
+});
+
+await test("House editing preserves Add values and inline focus across rerender", () => {
+  showPage("houses");
+  const add = byId("house-form");
+  add.elements.namedItem("name").value = "New house draft";
+  click('#house-list [aria-label="Edit House One"]');
+  const form = byId("house-list").querySelector("form");
+  const name = form.elements.namedItem("name");
+  name.value = "Editing house";
+  name.focus();
+  name.setSelectionRange(3, 3);
+  houses.render();
+  assert(byId("house-list").querySelector("form") === form && document.activeElement === name && name.selectionStart === 3, "House rerender disrupted its editor");
+  assert(add.elements.namedItem("name").value === "New house draft", "House edit changed the Add draft");
+});
+
+await test("House Add completes without reopening an input keyboard", () => {
+  showPage("houses");
+  byId("house-add").open = true;
+  const form = byId("house-form");
+  for (const [name, value] of Object.entries({
+    name: "New house", loan: "100000", ratePercent: "0", years: "10", startMonth: currentMonth(),
+  })) form.elements.namedItem(name).value = value;
+  form.requestSubmit();
+  assert(state.houses.length === 2 && state.houses[1].name === "New house", "House Add did not save");
+  assert(noEntryFocus(), "House Add reopened an input keyboard");
+});
+
 await test("Spending still rejects a nonpositive amount without committing", () => {
   field("amount").value = "0";
   field("description").value = "Invalid entry";
@@ -180,8 +505,10 @@ await test("updating a House closes its editor and returns focus to its Edit but
   const row = () => document.querySelector('#house-list [data-id="h1"]');
   row().open = true;
   row().querySelector('[aria-label="Edit House One"]').click();
-  byId("house-form").elements.namedItem("name").value = "Updated house";
-  byId("house-form").requestSubmit();
+  const editor = row().querySelector("form");
+  assert(editor, "House editor is not inside its card");
+  editor.elements.namedItem("name").value = "Updated house";
+  editor.requestSubmit();
   assert(state.houses[0].name === "Updated house", "House update was not committed");
   assert(!byId("house-add").open, "House edit no longer closes on save");
   assert(document.activeElement === row().querySelector('[aria-label="Edit Updated house"]'), "House update lost keyboard focus");
@@ -193,13 +520,14 @@ await test("cancelling a House edit returns focus without changing the House", (
   row.open = true;
   const edit = row.querySelector('[aria-label="Edit House One"]');
   edit.click();
-  byId("house-form").elements.namedItem("name").value = "Unsaved name";
-  byId("house-cancel").click();
+  const editor = row.querySelector("form");
+  assert(editor, "House editor is not inside its card");
+  editor.querySelector('[data-action="cancel"]').click();
   assert(state.houses[0].name === "House One", "Cancel changed the House");
   assert(document.activeElement === edit, "House cancel left focus in a hidden form");
 });
 
-async function expensesFrame({ stress = false } = {}) {
+async function expensesFrame({ stress = false, completeAccount = false } = {}) {
   const doc = source.cloneNode(true);
   doc.querySelector('meta[http-equiv="Content-Security-Policy"]').remove();
   const base = doc.createElement("base");
@@ -207,6 +535,10 @@ async function expensesFrame({ stress = false } = {}) {
   doc.head.prepend(base);
   const account = fixture();
   account.commitments = [{ id: "rent", name: "Rent", amount: 1000, everyMonths: 1 }];
+  if (completeAccount) {
+    account.lifestyle = [{ id: "food", name: "Food", low: 400, high: 800, everyMonths: 1 }];
+    account.spending = [{ id: "lunch", date: currentDate(), categoryId: "food", amount: 12.34, description: "Lunch" }];
+  }
   if (stress) {
     account.commitments[0] = {
       ...account.commitments[0], name: "R".repeat(80), amount: 1000000000, scenario: { on: true },
@@ -244,17 +576,105 @@ async function expensesFrame({ stress = false } = {}) {
   return frame.contentDocument;
 }
 
-await test("updating an Expense closes the editor and returns focus to its Edit button", async () => {
+await test("real-app inline edits across all modules reach the saved account snapshot", async () => {
+  const doc = await expensesFrame({ completeAccount: true });
+  const go = async (name) => {
+    doc.defaultView.location.hash = `#/${name}`;
+    const deadline = performance.now() + 5000;
+    while (doc.getElementById(`page-${name}`).hidden) {
+      assert(performance.now() < deadline, `Navigation to ${name} timed out`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+  doc.querySelector('[data-kind="commitments"] [aria-label="Edit Rent"]').click();
+  const expense = doc.querySelector('[data-kind="commitments"] .items form');
+  expense.elements.namedItem("amount").value = "1234";
+  expense.requestSubmit();
+  await go("spending");
+  doc.querySelector('[aria-label="Edit Lunch"]').click();
+  const spending = doc.querySelector("#spending-list form");
+  spending.elements.namedItem("amount").value = "56.78";
+  spending.requestSubmit();
+  await go("houses");
+  doc.querySelector('[aria-label="Edit House One"]').click();
+  const house = doc.querySelector("#house-list form");
+  house.elements.namedItem("name").value = "Updated house";
+  house.requestSubmit();
+  await go("renovation");
+  const card = doc.querySelector("#renovation-list details");
+  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+  const item = card.querySelector("form");
+  item.elements.namedItem("name").value = "Updated cabinets";
+  item.requestSubmit();
+  const deadline = performance.now() + 5000;
+  while (doc.getElementById("save-status").textContent !== "Saved") {
+    assert(performance.now() < deadline, "Account save did not complete");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const response = await doc.defaultView.fetch("/api/state");
+  const saved = JSON.parse((await response.json()).backup).data;
+  assert(saved.commitments[0].amount === 1234, "Expense edit did not reach the saved account");
+  assert(saved.spending[0].amount === 56.78, "Spending edit did not reach the saved account");
+  assert(saved.houses[0].name === "Updated house", "House edit did not reach the saved account");
+  assert(saved.renovationItems[0].name === "Updated cabinets", "Renovation edit did not reach the saved account");
+  assert(noEntryFocus(doc), "Cross-module save reopened an input keyboard");
+});
+
+await test("Expense Add completes without focusing another entry field", async () => {
+  const doc = await expensesFrame();
+  const section = doc.querySelector('[data-kind="commitments"]');
+  const form = section.querySelector('[data-role="add"] form');
+  section.querySelector('[data-role="add"]').open = true;
+  form.elements.namedItem("name").value = "New commitment";
+  form.elements.namedItem("amount").value = "45";
+  form.requestSubmit();
+  assert(section.querySelector(".items").textContent.includes("New commitment"), "Expense Add failed");
+  assert(noEntryFocus(doc), "Expense Add reopened the input keyboard");
+});
+
+await test("Expense inline draft keeps focus and caret during an income rerender", async () => {
   const doc = await expensesFrame();
   const section = doc.querySelector('[data-kind="commitments"]');
   section.querySelector('[aria-label="Edit Rent"]').click();
-  const form = section.querySelector("form");
+  const form = section.querySelector(".items form");
+  assert(form, "Expense inline form is missing");
+  const name = form.elements.namedItem("name");
+  name.value = "Unfinished rent";
+  name.focus();
+  name.setSelectionRange(4, 4);
+  const income = doc.getElementById("income");
+  income.value = "8000";
+  income.dispatchEvent(new Event("input", { bubbles: true }));
+  assert(section.querySelector(".items form") === form && doc.activeElement === name && name.selectionStart === 4, "Expense rerender disrupted inline typing");
+});
+
+await test("Scenario conversion remains reflected while an Expense editor is open", async () => {
+  const doc = await expensesFrame({ stress: true });
+  const section = doc.querySelector('[data-kind="commitments"]');
+  const row = section.querySelector(".items li");
+  row.querySelector('[aria-label^="Edit "]').click();
+  const form = row.querySelector("form");
+  assert(form, "Expense inline form is missing");
+  row.querySelector('[aria-label^="Make "]').click();
+  assert(!row.classList.contains("scenario") && !row.querySelector('[role="switch"]'), "Scenario conversion left stale row controls");
+  assert(row.querySelector("form") === form && !form.elements.namedItem("scenario").checked, "Scenario conversion disrupted its inline form");
+});
+
+await test("updating an Expense closes the editor and returns focus to its Edit button", async () => {
+  const doc = await expensesFrame();
+  const section = doc.querySelector('[data-kind="commitments"]');
+  const add = section.querySelector('[data-role="add"] form');
+  add.elements.namedItem("name").value = "Add draft";
+  section.querySelector('[aria-label="Edit Rent"]').click();
+  const form = section.querySelector(".items form");
+  assert(form, "Expense editor is not inside its row");
   form.elements.namedItem("amount").value = "1200";
   form.requestSubmit();
   const edit = section.querySelector('[aria-label="Edit Rent"]');
   assert(section.querySelector(".cost").textContent.includes("1,200"), "Expense amount was not updated");
   assert(!section.querySelector("details.add").open, "Expense edit no longer closes on save");
   assert(doc.activeElement === edit, "Expense update lost keyboard focus");
+  assert(add.elements.namedItem("name").value === "Add draft", "Expense update overwrote the Add draft");
 });
 
 await test("cancelling an Expense edit returns focus without changing the Expense", async () => {
@@ -262,8 +682,9 @@ await test("cancelling an Expense edit returns focus without changing the Expens
   const section = doc.querySelector('[data-kind="commitments"]');
   const edit = section.querySelector('[aria-label="Edit Rent"]');
   edit.click();
-  section.querySelector("form").elements.namedItem("amount").value = "1200";
-  section.querySelector('[data-role="cancel"]').click();
+  const form = section.querySelector(".items form");
+  assert(form, "Expense editor is not inside its row");
+  form.querySelector('[data-action="cancel"]').click();
   assert(section.querySelector(".cost").textContent.includes("1,000"), "Cancel changed the Expense");
   assert(doc.activeElement === edit, "Expense cancel left focus in a hidden form");
 });
@@ -294,7 +715,18 @@ window.runLayoutChecks = ({ textSize = 16 } = {}) => {
     showPage(name);
     const root = byId(`page-${name}`);
     root.querySelectorAll("details").forEach((panel) => { panel.open = true; });
-    if (name === "renovation") byId("renovation-add-item").click();
+    if (name === "spending") click('#spending-list [aria-label="Edit Lunch"]');
+    if (name === "houses") {
+      byId("house-list").querySelector('[aria-label^="Edit "]').click();
+    }
+    if (name === "renovation") {
+      const category = byId("renovation-categories").querySelector("details");
+      [...category.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
+      const card = byId("renovation-list").querySelector("details");
+      [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
+      const row = card.querySelector(".renovation-payments li");
+      [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+    }
     const visible = (node) => node.getClientRects().length > 0;
     if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) {
       errors.push(`${name}: horizontal document overflow`);

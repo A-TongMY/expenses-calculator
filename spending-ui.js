@@ -3,7 +3,10 @@ import { isActiveIn, roundToSen } from "./calc.js";
 import { MAX_AMOUNT, MAX_DESCRIPTION_LENGTH, isDate, isMonth } from "./rules.js";
 import { saveSpendingEntry, deleteSpendingEntry, spendingReport } from "./spending.js";
 import { renderSpendingSummary } from "./spending-summary.js";
-import { el, icon, iconButton, syncSelectOptions } from "./ui.js";
+import {
+  cloneEntryForm, discardForm, el, focusAction, focusRowAction, formSnapshot,
+  iconButton, keepViewport, syncRows, syncSelectOptions,
+} from "./ui.js";
 
 export function setupSpending({ getState, commit, newId }) {
   const byId = (id) => document.getElementById(id);
@@ -13,9 +16,12 @@ export function setupSpending({ getState, commit, newId }) {
   const categoryFilter = byId("spending-category-filter");
   const list = byId("spending-list");
   const message = byId("spending-message");
-  const cancel = byId("spending-cancel");
   const submit = byId("spending-submit");
   let editingId = null;
+  let editForm = null;
+  let editBaseline = "";
+  let feedback = null;
+  let previousFilters = null;
   let lastMonth = currentMonth();
   let lastDate = currentDate();
   month.value = lastMonth;
@@ -23,19 +29,24 @@ export function setupSpending({ getState, commit, newId }) {
   field("amount").max = MAX_AMOUNT;
   field("description").maxLength = MAX_DESCRIPTION_LENGTH;
 
-  function clearValidity() {
-    for (const control of form.elements) control.setCustomValidity("");
+  function clearValidity(target = form) {
+    for (const control of target.elements) control.setCustomValidity("");
+  }
+
+  function closeEdit() {
+    editForm?.remove();
+    editForm = null;
+    editingId = null;
   }
 
   function reset() {
     const category = field("categoryId").value;
-    editingId = null;
+    closeEdit();
     form.reset();
     clearValidity();
     field("date").value = currentDate();
     field("categoryId").value = category;
-    cancel.hidden = true;
-    submit.replaceChildren(icon("plus"), "Add");
+    feedback = null;
   }
 
   function syncCategories(select, categories, all = false) {
@@ -45,13 +56,32 @@ export function setupSpending({ getState, commit, newId }) {
   }
 
   function startEdit(entry) {
+    if (editingId === entry.id) return;
+    if (!discardForm(editForm, editBaseline)) return;
+    closeEdit();
     editingId = entry.id;
-    clearValidity();
-    for (const name of ["date", "categoryId", "amount", "description"]) field(name).value = entry[name];
-    cancel.hidden = false;
-    submit.replaceChildren(icon("check"), "Update");
-    message.textContent = "";
-    field("amount").focus();
+    editForm = cloneEntryForm(form);
+    editForm.setAttribute("aria-label", `Edit ${entry.description}`);
+    for (const name of ["date", "categoryId", "amount", "description"]) {
+      editForm.elements.namedItem(name).value = entry[name];
+    }
+    editForm.querySelector('button[type="submit"]').textContent = "Save";
+    const id = entry.id;
+    editForm.addEventListener("input", () => clearValidity(editForm));
+    editForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      save(editForm, id);
+    });
+    editForm.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+      if (!discardForm(editForm, editBaseline)) return;
+      keepViewport(() => {
+        closeEdit();
+        focusRowAction(list, id, `Edit ${entry.description}`);
+      });
+    });
+    editBaseline = formSnapshot(editForm);
+    const row = [...list.children].find((node) => node.dataset.id === id);
+    row.append(editForm);
   }
 
   function remove(entry) {
@@ -63,10 +93,13 @@ export function setupSpending({ getState, commit, newId }) {
       message.textContent = error.message;
       return;
     }
-    if (editingId === entry.id) reset();
-    commit(next);
-    message.textContent = "Entry removed from your changes.";
-    field("amount").focus();
+    if (editingId === entry.id && !discardForm(editForm, editBaseline)) return;
+    keepViewport(() => {
+      if (editingId === entry.id) closeEdit();
+      feedback = { id: null, text: "Entry removed from your changes." };
+      commit(next);
+      focusAction(list.querySelector("button") ?? list);
+    });
   }
 
   function buildRow(entry) {
@@ -91,12 +124,13 @@ export function setupSpending({ getState, commit, newId }) {
     const state = getState();
     const today = currentDate();
     const nowMonth = currentMonth();
-    if (month.value === lastMonth && nowMonth !== lastMonth) month.value = nowMonth;
+    if (!editingId && month.value === lastMonth && nowMonth !== lastMonth) month.value = nowMonth;
     if (!editingId && field("date").value === lastDate && today !== lastDate) field("date").value = today;
     lastMonth = nowMonth;
     lastDate = today;
-    if (editingId && !state.spending.some(({ id }) => id === editingId)) reset();
+    if (editingId && !state.spending.some(({ id }) => id === editingId)) closeEdit();
     syncCategories(field("categoryId"), state.lifestyle);
+    if (editForm) syncCategories(editForm.elements.namedItem("categoryId"), state.lifestyle);
     syncCategories(categoryFilter, state.lifestyle, true);
     field("date").setCustomValidity("");
     field("categoryId").setCustomValidity("");
@@ -114,26 +148,44 @@ export function setupSpending({ getState, commit, newId }) {
     month.setCustomValidity("");
     const report = spendingReport(state, month.value, categoryFilter.value || null);
     renderSpendingSummary(byId("spending-summary"), report);
-    list.replaceChildren(...report.entries.map(buildRow));
+    syncRows(list, report.entries, buildRow, editingId);
+    if (editingId) {
+      const entry = state.spending.find(({ id }) => id === editingId);
+      const category = state.lifestyle.find(({ id }) => id === entry.categoryId);
+      const row = [...list.children].find((node) => node.dataset.id === editingId);
+      if (row) row.querySelector(".detail").textContent = `${dateLabel(entry.date)} · ${category.name}`;
+    }
+    if (feedback) {
+      const row = [...list.children].find((node) => node.dataset.id === feedback.id);
+      const status = el(row ? "p" : "li", "hint", feedback.text);
+      status.setAttribute("role", "status");
+      if (row) {
+        row.querySelector('[role="status"]')?.remove();
+        row.append(status);
+      } else list.append(status);
+    }
+    previousFilters = [month.value, categoryFilter.value];
     byId("spending-empty").hidden = report.count > 0;
     byId("spending-total").textContent = `Total ${money.format(report.total)}`;
   }
 
   for (const filter of [month, categoryFilter]) {
     filter.addEventListener("change", () => {
+      if (!discardForm(editForm, editBaseline)) {
+        [month.value, categoryFilter.value] = previousFilters;
+        return;
+      }
+      closeEdit();
+      feedback = null;
       message.textContent = "";
       render();
     });
   }
-  form.addEventListener("input", clearValidity);
-  cancel.addEventListener("click", () => {
-    reset();
-    message.textContent = "";
-    field("amount").focus();
-  });
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    clearValidity();
+  form.addEventListener("input", () => clearValidity());
+  function save(target, id = null) {
+    const field = (name) => target.elements.namedItem(name);
+    clearValidity(target);
+    const localMessage = id ? editForm.querySelector('[role="status"]') : message;
     const state = getState();
     const category = state.lifestyle.find(({ id }) => id === field("categoryId").value);
     const date = field("date").value;
@@ -144,9 +196,9 @@ export function setupSpending({ getState, commit, newId }) {
     if (!category) field("categoryId").setCustomValidity("Choose a Lifestyle category.");
     const description = field("description").value.trim();
     if (!description) field("description").setCustomValidity("Enter a description.");
-    if (!form.reportValidity()) return;
+    if (!target.reportValidity()) return;
     const entry = {
-      id: editingId ?? newId(),
+      id: id ?? newId(),
       date,
       categoryId: category.id,
       amount: roundToSen(Number(field("amount").value)),
@@ -156,18 +208,39 @@ export function setupSpending({ getState, commit, newId }) {
     try {
       next = saveSpendingEntry(state, entry);
     } catch (error) {
-      message.textContent = error.message;
+      if (localMessage) localMessage.textContent = error.message;
+      else {
+        const status = el("p", "notice", error.message);
+        status.setAttribute("role", "status");
+        target.append(status);
+      }
       return;
     }
     const outside = entry.date.slice(0, 7) !== month.value ||
       (categoryFilter.value && categoryFilter.value !== entry.categoryId);
-    const feedback = editingId ? "Entry updated in your changes" : "Entry added to your changes";
-    reset();
-    commit(next);
-    message.textContent = outside
-      ? `${feedback} outside these filters.`
-      : `${feedback}.`;
-    field("amount").focus();
+    const text = `${id ? "Entry updated in your changes" : "Entry added to your changes"}${outside ? " outside these filters." : "."}`;
+    keepViewport(() => {
+      if (id) {
+        closeEdit();
+        feedback = { id, text };
+      } else {
+        const category = field("categoryId").value;
+        target.reset();
+        field("date").value = currentDate();
+        field("categoryId").value = category;
+        message.textContent = text;
+      }
+      commit(next);
+      if (id) {
+        focusRowAction(list, id, `Edit ${entry.description}`);
+        if (!list.contains(document.activeElement)) focusAction(list);
+      } else focusAction(submit);
+    });
+  }
+  list.tabIndex = -1;
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    save(form);
   });
   return { render, reset };
 }

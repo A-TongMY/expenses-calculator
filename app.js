@@ -23,7 +23,10 @@ import {
   StorageError,
   createStorageClient,
 } from "./storage.js";
-import { el, focusRowAction, iconButton, rememberPanels } from "./ui.js";
+import {
+  cloneEntryForm, discardForm, el, focusAction, focusRowAction, formSnapshot,
+  iconButton, keepViewport, rememberPanels, syncRows,
+} from "./ui.js";
 
 const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
@@ -209,48 +212,34 @@ function createSection(root, key, config) {
   const part = (role) => root.querySelector(`[data-role="${role}"]`);
   const list = part("list");
   const emptyMessage = part("empty");
-  const form = part("form");
-  const addPanel = part("add");
+  const addForm = part("form");
   const count = part("count");
-  const heading = part("form-heading");
-  const submit = part("submit");
-  const cancel = part("cancel");
-  const customField = part("custom-field");
-  const field = (name) => form.elements.namedItem(name);
-  const addHeading = heading.textContent;
   let editingId = null;
-
+  let editForm = null;
+  let editBaseline = "";
   const find = (id) => state[key].find((item) => item.id === id);
 
-  function readEveryMonths() {
-    return Number(field("cadence").value === "custom" ? field("customMonths").value : field("cadence").value);
-  }
-
-  function syncCustomField() {
-    const custom = field("cadence").value === "custom";
-    customField.hidden = !custom;
-    field("customMonths").disabled = !custom;
-  }
-
-  function clearValidity() {
-    for (const control of form.elements) control.setCustomValidity("");
+  function closeEdit() {
+    editForm?.remove();
+    editForm = null;
+    editingId = null;
   }
 
   function reset() {
-    // Finishing an edit folds the form away; adding keeps it open for the next item.
-    if (editingId !== null) addPanel.open = false;
-    editingId = null;
-    form.reset();
-    clearValidity();
-    heading.textContent = addHeading;
-    cancel.hidden = true;
-    syncCustomField();
+    closeEdit();
+    addForm.reset();
+    for (const control of addForm.elements) control.setCustomValidity("");
+    addForm.querySelector('[data-role="custom-field"]').hidden = true;
+    addForm.elements.namedItem("customMonths").disabled = true;
   }
 
   function startEdit(id) {
     const item = find(id);
-    if (!item) return;
+    if (!item || editingId === id || !discardForm(editForm, editBaseline)) return;
+    closeEdit();
     editingId = id;
+    editForm = cloneEntryForm(addForm);
+    const field = (name) => editForm.elements.namedItem(name);
     field("name").value = item.name;
     for (const amountField of config.amountFields) field(amountField).value = item[amountField];
     field("startMonth").value = item.startMonth ?? "";
@@ -262,11 +251,11 @@ function createSection(root, key, config) {
       field("cadence").value = "custom";
       field("customMonths").value = item.everyMonths;
     }
-    syncCustomField();
-    heading.textContent = "Edit";
-    cancel.hidden = false;
-    addPanel.open = true;
-    field("name").focus();
+    editForm.querySelector('[data-role="submit"]').textContent = "Save";
+    editForm.setAttribute("aria-label", `Edit ${item.name}`);
+    bindForm(editForm, id);
+    editBaseline = formSnapshot(editForm);
+    [...list.children].find((row) => row.dataset.id === id).append(editForm);
   }
 
   function remove(id) {
@@ -281,8 +270,12 @@ function createSection(root, key, config) {
         return;
       }
     }
-    if (editingId === id) reset();
-    commit(next);
+    if (editingId === id && !discardForm(editForm, editBaseline)) return;
+    keepViewport(() => {
+      if (editingId === id) closeEdit();
+      commit(next);
+      focusAction(list.querySelector("button") ?? list);
+    });
   }
 
   function replaceItem(id, change) {
@@ -298,10 +291,11 @@ function createSection(root, key, config) {
     box.setAttribute("aria-label", `Include ${item.name} in the figures`);
     box.title = "Include";
     box.addEventListener("change", () => {
-      replaceItem(item.id, (other) => ({ ...other, scenario: { on: box.checked } }));
-      // The list was just rebuilt, so the focused switch is gone: give focus back to its replacement.
-      const row = [...list.children].find((other) => other.dataset.id === item.id);
-      row?.querySelector("input[role=switch]")?.focus();
+      keepViewport(() => {
+        replaceItem(item.id, (other) => ({ ...other, scenario: { on: box.checked } }));
+        const row = [...list.children].find((other) => other.dataset.id === item.id);
+        focusAction(row?.querySelector("input[role=switch]"));
+      });
     });
     toggle.append(box);
 
@@ -310,8 +304,11 @@ function createSection(root, key, config) {
       label: `Make ${item.name} a real commitment`,
       className: "positive",
       onClick: () => {
-        if (editingId === item.id) field("scenario").checked = false;
-        replaceItem(item.id, ({ scenario, ...real }) => real);
+        keepViewport(() => {
+          if (editingId === item.id) editForm.elements.namedItem("scenario").checked = false;
+          replaceItem(item.id, ({ scenario, ...real }) => real);
+          focusRowAction(list, item.id, `Edit ${item.name}`);
+        });
       },
     });
     return [toggle, makeReal];
@@ -320,6 +317,7 @@ function createSection(root, key, config) {
   function buildRow(item) {
     const row = el("li");
     row.dataset.id = item.id;
+    row.dataset.snapshot = JSON.stringify(item);
 
     const name = el("div", "name", item.name);
     if (item.scenario) {
@@ -342,77 +340,102 @@ function createSection(root, key, config) {
   }
 
   function render() {
-    if (editingId && !find(editingId)) reset();
-    list.replaceChildren(...state[key].map(buildRow));
+    if (editingId && !find(editingId)) closeEdit();
+    syncRows(list, state[key], buildRow, editingId);
+    if (editingId) {
+      const item = find(editingId);
+      const row = [...list.children].find((node) => node.dataset.id === editingId);
+      if (row.dataset.snapshot !== JSON.stringify(item)) {
+        const updated = buildRow(item);
+        row.className = updated.className;
+        row.dataset.snapshot = updated.dataset.snapshot;
+        for (const selector of [".name", ".cost", ".detail", ".actions"]) {
+          row.querySelector(selector).replaceWith(updated.querySelector(selector));
+        }
+      }
+    }
     emptyMessage.hidden = state[key].length > 0;
     count.textContent = state[key].length;
     count.hidden = state[key].length === 0;
   }
 
-  field("cadence").addEventListener("change", syncCustomField);
-  cancel.addEventListener("click", () => {
-    const item = find(editingId);
-    reset();
-    addPanel.open = false;
-    if (item) focusRowAction(list, item.id, `Edit ${item.name}`);
-  });
-
-  form.addEventListener("input", clearValidity);
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    field("name").setCustomValidity(field("name").value.trim() ? "" : "Enter a name.");
-    checkMonths(field);
-    config.checkForm?.(field);
-    if (!form.reportValidity()) return;
-
-    const months = Object.fromEntries(
-      ["startMonth", "endMonth"].map((name) => [name, field(name).value]).filter(([, value]) => value),
-    );
-    const item = {
-      id: editingId ?? newId(),
-      name: field("name").value.trim(),
-      ...Object.fromEntries(config.amountFields.map((name) => [name, Number(field(name).value)])),
-      everyMonths: readEveryMonths(),
-      ...months,
+  function bindForm(form, id = null) {
+    const field = (name) => form.elements.namedItem(name);
+    const syncCustomField = () => {
+      const custom = field("cadence").value === "custom";
+      form.querySelector('[data-role="custom-field"]').hidden = !custom;
+      field("customMonths").disabled = !custom;
     };
-    if (config.scenarios && field("scenario").checked) {
-      item.scenario = { on: find(editingId)?.scenario?.on ?? true };
-    }
-    if (!config.isValid(item)) {
-      field("name").setCustomValidity("Some of these values are not valid. Check them and try again.");
-      form.reportValidity();
-      return;
-    }
+    field("cadence").addEventListener("change", syncCustomField);
+    form.addEventListener("input", () => {
+      for (const control of form.elements) control.setCustomValidity("");
+    });
+    if (id) form.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+      if (!discardForm(editForm, editBaseline)) return;
+      keepViewport(() => {
+        closeEdit();
+        focusRowAction(list, id, `Edit ${find(id).name}`);
+      });
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      field("name").setCustomValidity(field("name").value.trim() ? "" : "Enter a name.");
+      checkMonths(field);
+      config.checkForm?.(field);
+      if (!form.reportValidity()) return;
 
-    const next = {
-      ...state,
-      [key]: editingId
-        ? state[key].map((other) => (other.id === editingId ? item : other))
-        : [...state[key], item],
-    };
-    if (next[key].length > MAX_ITEMS) {
-      field("name").setCustomValidity(`That would go over the limit of ${MAX_ITEMS} items.`);
-      form.reportValidity();
-      return;
-    }
-    if (key === "lifestyle") {
-      try {
-        assertLifestyleChangeAllowed(state, next.lifestyle);
-      } catch (error) {
-        field("endMonth").setCustomValidity(error.message);
+      const months = Object.fromEntries(
+        ["startMonth", "endMonth"].map((name) => [name, field(name).value]).filter(([, value]) => value),
+      );
+      const item = {
+        id: id ?? newId(),
+        name: field("name").value.trim(),
+        ...Object.fromEntries(config.amountFields.map((name) => [name, Number(field(name).value)])),
+        everyMonths: Number(field("cadence").value === "custom" ? field("customMonths").value : field("cadence").value),
+        ...months,
+      };
+      if (config.scenarios && field("scenario").checked) {
+        item.scenario = { on: find(id)?.scenario?.on ?? true };
+      }
+      if (!config.isValid(item)) {
+        field("name").setCustomValidity("Some of these values are not valid. Check them and try again.");
         form.reportValidity();
         return;
       }
-    }
-    const wasEditing = editingId !== null;
-    reset();
-    commit(next);
-    if (wasEditing) focusRowAction(list, item.id, `Edit ${item.name}`);
-    else field("name").focus();
-  });
 
-  syncCustomField();
+      const next = {
+        ...state,
+        [key]: id
+          ? state[key].map((other) => (other.id === id ? item : other))
+          : [...state[key], item],
+      };
+      if (next[key].length > MAX_ITEMS) {
+        field("name").setCustomValidity(`That would go over the limit of ${MAX_ITEMS} items.`);
+        form.reportValidity();
+        return;
+      }
+      if (key === "lifestyle") {
+        try {
+          assertLifestyleChangeAllowed(state, next.lifestyle);
+        } catch (error) {
+          field("endMonth").setCustomValidity(error.message);
+          form.reportValidity();
+          return;
+        }
+      }
+      keepViewport(() => {
+        if (id) closeEdit();
+        else { form.reset(); syncCustomField(); }
+        commit(next);
+        if (id) focusRowAction(list, item.id, `Edit ${item.name}`);
+        else focusAction(form.querySelector('[type="submit"]'));
+      });
+    });
+
+    syncCustomField();
+  }
+  list.tabIndex = -1;
+  bindForm(addForm);
   return { render, reset };
 }
 

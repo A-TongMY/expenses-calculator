@@ -69,6 +69,19 @@ export function loanSummary(house, asOfMonth) {
   };
 }
 
+const months = (count) => `${count} month${count === 1 ? "" : "s"}`;
+
+// The contract term and the projected payoff differ when a bank installment differs from the standard one.
+// Payments made are counted from the calendar, not from bank records, so they are an estimate.
+export function loanTermLabels(house, summary) {
+  const gap = summary.paymentsTotal - house.termMonths;
+  return {
+    term: months(house.termMonths),
+    payoff: gap === 0 ? null : `${summary.paymentsTotal} payments · ${months(Math.abs(gap))} ${gap < 0 ? "earlier" : "later"}`,
+    paid: `~${summary.paymentsMade} paid (estimated)`,
+  };
+}
+
 export function housesOverview(houses, asOfMonth) {
   const summaries = houses.map((house) => loanSummary(house, asOfMonth));
   const sum = (pick) => roundToSen(summaries.reduce((acc, item) => acc + pick(item), 0));

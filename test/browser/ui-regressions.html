@@ -13,6 +13,7 @@ import { setupRenovation } from "../../renovation-ui.js";
 import { setupHouses } from "../../houses.js";
 import { setupHome } from "../../home.js";
 import { currentDate, currentMonth } from "../../format.js";
+import { renovationDate, renovationMonth } from "../../renovation-calendar.js";
 import { fixture } from "../helpers/renovation-fixture.js";
 
 const source = new DOMParser().parseFromString(await (await fetch("/index.html")).text(), "text/html");
@@ -265,197 +266,178 @@ await test("category rename updates the displayed category around a retained Spe
   assert(inlineSpending() === form, "Updating the category label replaced the editor");
 });
 
-await test("Renovation keeps an expanded category open after rerender", () => {
+const renovationCard = (id = "cabinets") => byId("renovation-list").querySelector(`li[data-id="${id}"]`);
+const withConfirm = (answer, operation) => {
+  const original = window.confirm;
+  window.confirm = () => answer;
+  try { operation(); } finally { window.confirm = original; }
+};
+
+await test("Renovation overview shows Budget, Actual cost, Paid and Outstanding, and Due only above zero", () => {
   showPage("renovation");
-  document.querySelector("#renovation-categories details").open = true;
+  const keys = () => [...byId("renovation-overview").querySelectorAll(".stat")].map((tile) => tile.dataset.key).join();
+  state.renovationItems[0].installmentPlan.startMonth = "2099-01";
   renovation.render();
-  assert(document.querySelector("#renovation-categories details").open, "Category panel collapsed");
+  assert(keys() === "budget,actualCost,paid,outstanding", `Unexpected tiles ${keys()}`);
+  state.renovationItems[0].installmentPlan.startMonth = renovationMonth();
+  renovation.render();
+  assert(keys() === "budget,actualCost,paid,outstanding,due", `Due tile missing: ${keys()}`);
 });
 
-await test("Renovation rerender preserves the house dropdown and unsaved editor controls", () => {
+await test("Renovation Add item needs only name, notes, budget and actual cost", () => {
   showPage("renovation");
-  byId("renovation-add-item").click();
-  const form = byId("renovation-editor").querySelector("form");
+  const add = byId("renovation-add");
+  const form = byId("renovation-item-form");
+  add.open = true;
+  assert(!form.querySelector('[name="categoryId"]') && !byId("renovation-categories"), "Categories are still shown");
+  assert([...form.elements].filter((node) => node.name).map((node) => node.name).join() === "name,notes,budget,actualCost", "Add form has extra fields");
+  form.elements.namedItem("name").value = "Lighting";
+  form.elements.namedItem("notes").value = "Living room";
+  form.elements.namedItem("budget").value = "800";
+  form.requestSubmit();
+  const saved = state.renovationItems.find((item) => item.name === "Lighting");
+  assert(saved && saved.houseId === "h1" && saved.budget === 800 && saved.notes === "Living room" && saved.actualCost === undefined, "Item was not saved as entered");
+  assert(renovationCard(saved.id), "New item card is missing");
+  assert(form.elements.namedItem("name").value === "" && add.open, "Add form did not reset in place");
+  assert(noEntryFocus(), "Add reopened an input keyboard");
+});
+
+await test("Renovation item edits inline in its card, keeps its plan and the Add draft", () => {
+  showPage("renovation");
+  const add = byId("renovation-item-form");
+  add.elements.namedItem("name").value = "Add draft";
+  renovationCard().querySelector('[aria-label="Edit Cabinets"]').click();
+  const form = renovationCard().querySelector("form");
+  assert(form && form !== add, "Item editor did not open inside its card");
+  assert(form.elements.namedItem("actualCost").value === "12000", "Item editor did not load the item");
+  assert(noEntryFocus(), "Opening the item editor forced the keyboard open");
+  form.elements.namedItem("name").value = "Kitchen cabinets";
+  form.requestSubmit();
+  assert(state.renovationItems[0].name === "Kitchen cabinets" && state.renovationItems[0].installmentPlan.count === 10, "Item save lost data");
+  assert(!renovationCard().querySelector("form"), "Item editor stayed open");
+  assert(document.activeElement === renovationCard().querySelector('[aria-label="Edit Kitchen cabinets"]'), "Focus did not return to Edit");
+  assert(add.elements.namedItem("name").value === "Add draft", "Item edit overwrote the Add draft");
+});
+
+await test("Renovation rerender keeps the inline editor draft, focus and caret", () => {
+  showPage("renovation");
+  const house = byId("renovation-house").options[0];
+  renovationCard().querySelector('[aria-label="Edit Cabinets"]').click();
+  const form = renovationCard().querySelector("form");
   const name = form.elements.namedItem("name");
-  name.value = "Unfinished item";
-  name.dispatchEvent(new Event("input", { bubbles: true }));
+  name.value = "Unfinished";
   name.focus();
   name.setSelectionRange(4, 4);
-  const category = form.elements.namedItem("categoryId").options[0];
-  const house = byId("renovation-house").options[0];
   renovation.render();
   assert(byId("renovation-house").options[0] === house, "Unchanged house dropdown was rebuilt");
-  assert(form.elements.namedItem("categoryId").options[0] === category, "Unchanged draft category dropdown was rebuilt");
-  assert(name.value === "Unfinished item" && name.selectionStart === 4 && document.activeElement === name, "Editor draft was disrupted");
+  assert(renovationCard().querySelector("form") === form && document.activeElement === name && name.selectionStart === 4 && name.value === "Unfinished", "Rerender disrupted the editor");
 });
 
-await test("Renovation item and payment editors stay inside their existing cards and rows", () => {
+await test("Renovation payment saves immediately and fills the oldest installment", () => {
   showPage("renovation");
-  const card = byId("renovation-list").querySelector("details");
-  card.open = true;
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const itemForm = card.querySelector('form');
-  assert(itemForm, "Item editor opened outside its card");
-  assert(noEntryFocus(), "Opening the item editor forced the keyboard open");
-  const name = itemForm.elements.namedItem("name");
-  name.value = "Updated cabinets";
-  name.dispatchEvent(new Event("input", { bubbles: true }));
-  name.focus();
-  name.setSelectionRange(4, 4);
+  state.renovationItems[0].installmentPlan.startMonth = renovationMonth();
   renovation.render();
-  assert(card.isConnected && card.querySelector("form") === itemForm && document.activeElement === name, "Item rerender replaced the active editor");
-  const paymentRow = card.querySelector(".renovation-payments li");
-  [...paymentRow.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
-  const paymentForm = paymentRow.querySelector("form");
-  assert(paymentForm, "Payment edit opened outside its payment row");
-  paymentForm.elements.namedItem("amount").value = "1500";
-  paymentForm.requestSubmit();
-  assert(state.renovationPayments[0].amount === 2000, "Staging prematurely saved the payment");
-  assert(noEntryFocus(), "Staging payment focused another input");
-  itemForm.requestSubmit();
-  assert(state.renovationItems[0].name === "Updated cabinets" && state.renovationPayments[0].amount === 1500, "Item/payment save was not atomic");
-  assert(noEntryFocus(), "Item save reopened the keyboard");
-});
-
-await test("Renovation category rename stays in the category card", () => {
-  showPage("renovation");
-  const add = byId("renovation-category-form");
-  add.elements.namedItem("name").value = "New category draft";
-  const card = byId("renovation-categories").querySelector("details");
-  card.open = true;
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
-  const form = card.querySelector("form");
-  assert(form, "Category rename reused the Add form");
-  form.elements.namedItem("name").value = "Updated kitchen";
+  renovationCard().querySelector('[aria-label="Add payment to Cabinets"]').click();
+  const form = renovationCard().querySelector("form");
+  assert(form && form.elements.namedItem("kind").value === "payment" && form.elements.namedItem("date").value === renovationDate(), "Payment form defaults are wrong");
+  assert(noEntryFocus(), "Opening the payment form forced the keyboard open");
+  form.elements.namedItem("amount").value = "1500";
   form.requestSubmit();
-  assert(state.renovationCategories[0].name === "Updated kitchen", "Category rename did not save");
-  assert(add.elements.namedItem("name").value === "New category draft", "Category rename overwrote the Add draft");
-  assert(noEntryFocus(), "Category rename reopened an input keyboard");
+  assert(state.renovationPayments.length === 2 && state.renovationPayments[1].amount === 1500 && state.renovationPayments[1].kind === "payment", "Payment was not saved");
+  assert(renovationCard().querySelector('[data-role="plan"]').textContent.includes("1 of 10 covered"), "Payment did not cover the oldest installment");
+  assert(document.activeElement === renovationCard().querySelector('[aria-label="Add payment to Cabinets"]'), "Focus did not return to Add payment");
 });
 
-await test("Renovation totals stay current while a category rename editor is open", () => {
+await test("Renovation payment edit and delete happen in the payment row", () => {
   showPage("renovation");
-  const category = byId("renovation-categories").querySelector("details");
-  [...category.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
-  const rename = category.querySelector("form");
-  const item = byId("renovation-list").querySelector("details");
-  [...item.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const form = item.querySelector("form");
-  form.elements.namedItem("budget").value = "9000";
+  const row = () => renovationCard().querySelector('.payments li[data-id="deposit"]');
+  row().querySelector('[aria-label="Edit payment"]').click();
+  const form = row().querySelector("form");
+  assert(form && form.elements.namedItem("amount").value === "2000" && form.elements.namedItem("kind").value === "deposit", "Payment editor did not open in its row");
+  form.elements.namedItem("amount").value = "1500";
   form.requestSubmit();
-  assert(category.textContent.includes("9,000.00"), "Retained category shows outdated saved totals");
-  assert(category.querySelector("form") === rename, "Updating totals replaced the category editor");
+  assert(state.renovationPayments[0].amount === 1500, "Payment edit was not saved");
+  assert(document.activeElement === row().querySelector('[aria-label="Edit payment"]'), "Focus did not return to the payment row");
+  withConfirm(false, () => row().querySelector('[aria-label="Delete payment"]').click());
+  assert(state.renovationPayments.length === 1, "Declined delete removed the payment");
+  withConfirm(true, () => row().querySelector('[aria-label="Delete payment"]').click());
+  assert(state.renovationPayments.length === 0 && !row(), "Payment was not deleted");
 });
 
-await test("Renovation restores an unfinished new item after editing an existing item", () => {
+await test("Renovation monthly plan is set, changed and removed from the item", () => {
   showPage("renovation");
-  byId("renovation-add-item").click();
-  const add = byId("renovation-editor").querySelector("form");
-  add.elements.namedItem("name").value = "New item draft";
-  add.elements.namedItem("budget").value = "456";
-  add.dispatchEvent(new Event("input", { bubbles: true }));
-  const card = byId("renovation-list").querySelector("details");
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const edit = card.querySelector("form");
-  edit.elements.namedItem("name").value = "Changed cabinets";
-  edit.requestSubmit();
-  assert(byId("renovation-editor").querySelector("form") === add && add.isConnected, "New item draft was not restored");
-  assert(add.elements.namedItem("name").value === "New item draft" && add.elements.namedItem("budget").value === "456", "New item values changed");
-  assert(state.renovationItems.length === 1 && state.renovationItems[0].name === "Changed cabinets", "Editing saved or lost the new item draft");
+  renovationCard().querySelector('[aria-label="Monthly plan for Cabinets"]').click();
+  let form = renovationCard().querySelector("form");
+  assert(form.elements.namedItem("amount").value === "1000" && form.elements.namedItem("count").value === "10", "Plan form did not load the plan");
+  form.elements.namedItem("count").value = "8";
+  form.requestSubmit();
+  assert(state.renovationItems[0].installmentPlan.count === 8, "Plan change was not saved");
+  renovationCard().querySelector('[aria-label="Monthly plan for Cabinets"]').click();
+  form = renovationCard().querySelector("form");
+  withConfirm(true, () => form.querySelector('[aria-label="Remove plan"]').click());
+  assert(state.renovationItems[0].installmentPlan === undefined, "Plan was not removed");
+  assert(!renovationCard().querySelector('[data-role="plan"]:not([hidden])'), "Plan line is still shown");
 });
 
-await test("Renovation payment editing preserves an unfinished new payment", () => {
+await test("Renovation errors name the item, keep the draft and save nothing", () => {
   showPage("renovation");
-  const card = byId("renovation-list").querySelector("details");
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const forms = card.querySelectorAll("form");
-  const add = forms[1];
-  add.elements.namedItem("amount").value = "123";
-  add.dispatchEvent(new Event("input", { bubbles: true }));
-  const row = card.querySelector(".renovation-payments li");
-  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
-  const edit = row.querySelector("form");
-  edit.elements.namedItem("amount").value = "1500";
-  edit.requestSubmit();
-  assert(!row.contains(add) && add.elements.namedItem("amount").value === "123", "Payment edit lost the Add-payment draft");
-  forms[0].requestSubmit();
-  assert(state.renovationPayments[0].amount === 2000, "Unstaged Add-payment draft did not block item save");
-  assert(card.textContent.includes("Stage or cancel"), "Unstaged payment error was not local");
+  const before = JSON.stringify(state);
+  renovationCard().querySelector('[aria-label="Monthly plan for Cabinets"]').click();
+  const form = renovationCard().querySelector("form");
+  form.elements.namedItem("amount").value = "2000";
+  form.requestSubmit();
+  assert(JSON.stringify(state) === before, "Invalid plan was saved");
+  assert(form.isConnected && form.elements.namedItem("amount").value === "2000", "Invalid plan closed the editor");
+  assert(form.querySelector('[data-role="message"]').textContent.startsWith("Cabinets: Deposits plus"), "Error does not name the item");
 });
 
-await test("an unfinished Add-payment draft blocks Save all while editing another payment", () => {
+await test("Renovation payment and plan buttons wait for an actual cost", () => {
   showPage("renovation");
-  const card = byId("renovation-list").querySelector("details");
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const item = card.querySelector("form");
-  const payment = card.querySelectorAll("form")[1];
-  payment.elements.namedItem("amount").value = "123";
-  payment.dispatchEvent(new Event("input", { bubbles: true }));
-  const row = card.querySelector(".renovation-payments li");
-  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
-  item.requestSubmit();
-  assert(card.contains(item) && row.contains(payment), "Save all discarded the unfinished Add-payment draft");
-  assert(card.textContent.includes("Stage or cancel"), "Hidden unfinished payment did not block Save all");
+  state.renovationItems.push({ id: "paint", houseId: "h1", name: "Painting", budget: 300 });
+  renovation.render();
+  for (const label of ["Add payment to Painting", "Monthly plan for Painting"]) {
+    const action = renovationCard("paint").querySelector(`[aria-label="${label}"]`);
+    assert(action.disabled && action.title === "Set actual cost first", `${label} is not waiting for an actual cost`);
+  }
+  assert(!renovationCard().querySelector('[aria-label="Add payment to Cabinets"]').disabled, "Cabinets payments are disabled");
 });
 
-await test("suspending a new Renovation item preserves its staged-payment edit identity", () => {
+await test("Renovation opening another editor asks before discarding changes", () => {
   showPage("renovation");
-  byId("renovation-add-item").click();
-  const addHost = byId("renovation-editor");
-  const itemForm = addHost.querySelector("form");
-  itemForm.elements.namedItem("name").value = "New planned item";
-  itemForm.elements.namedItem("actualCost").value = "500";
-  itemForm.dispatchEvent(new Event("input", { bubbles: true }));
-  const paymentForm = addHost.querySelectorAll("form")[1];
-  paymentForm.elements.namedItem("amount").value = "100";
-  paymentForm.requestSubmit();
-  const row = addHost.querySelector(".renovation-payments li");
-  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
-  paymentForm.elements.namedItem("amount").value = "150";
-  const existing = byId("renovation-list").querySelector("details");
-  [...existing.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  existing.querySelector("form").requestSubmit();
-  assert(addHost.querySelector("form") === itemForm, "Suspended new item was not restored");
-  paymentForm.requestSubmit();
-  itemForm.requestSubmit();
-  const saved = state.renovationItems.find((item) => item.name === "New planned item");
-  assert(saved, "Restored new item was not saved");
-  const payments = state.renovationPayments.filter((payment) => payment.itemId === saved.id);
-  assert(payments.length === 1 && payments[0].amount === 150, "Restored payment edit became a new duplicate payment");
-  assert(noEntryFocus(), "New renovation item save reopened an input keyboard");
+  renovationCard().querySelector('[aria-label="Edit Cabinets"]').click();
+  const form = renovationCard().querySelector("form");
+  form.elements.namedItem("name").value = "Changed";
+  withConfirm(false, () => renovationCard().querySelector('[aria-label="Add payment to Cabinets"]').click());
+  assert(form.isConnected && renovationCard().querySelectorAll("form").length === 1, "Declined discard closed the item editor");
+  withConfirm(true, () => renovationCard().querySelector('[aria-label="Add payment to Cabinets"]').click());
+  assert(!form.isConnected && renovationCard().querySelector("form [name=kind]"), "Payment editor did not replace the item editor");
+  assert(state.renovationItems[0].name === "Cabinets", "Discarded edit was saved");
 });
 
-await test("Renovation payment Cancel restores Add-payment values without changing saved data", () => {
+await test("Renovation delete removes the item and its payments after confirmation", () => {
   showPage("renovation");
-  const card = byId("renovation-list").querySelector("details");
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const row = card.querySelector(".renovation-payments li");
-  [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
-  const form = row.querySelector("form");
-  form.elements.namedItem("amount").value = "1000";
-  const confirm = window.confirm;
-  window.confirm = () => true;
-  try { [...form.querySelectorAll("button")].find((node) => node.textContent === "Cancel payment edit").click(); }
-  finally { window.confirm = confirm; }
-  assert(state.renovationPayments[0].amount === 2000, "Payment Cancel changed saved data");
-  assert(!row.contains(form) && form.elements.namedItem("amount").value === "", "Payment Cancel did not restore the Add-payment form");
-  assert(noEntryFocus(), "Payment Cancel reopened an input keyboard");
+  withConfirm(false, () => renovationCard().querySelector('[aria-label="Delete Cabinets"]').click());
+  assert(state.renovationItems.length === 1, "Declined delete removed the item");
+  withConfirm(true, () => renovationCard().querySelector('[aria-label="Delete Cabinets"]').click());
+  assert(state.renovationItems.length === 0 && state.renovationPayments.length === 0, "Delete left data behind");
+  assert(!renovationCard() && !byId("renovation-empty").hidden, "Empty message is not shown");
 });
 
-await test("Renovation category Cancel preserves both saved name and Add draft", () => {
+await test("Renovation actions are icon buttons with labels and the intro is an info tip", () => {
   showPage("renovation");
-  const add = byId("renovation-category-form");
-  add.elements.namedItem("name").value = "Add draft";
-  const card = byId("renovation-categories").querySelector("details");
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
-  const form = card.querySelector("form");
-  form.elements.namedItem("name").value = "Unsaved rename";
-  const confirm = window.confirm;
-  window.confirm = () => true;
-  try { form.querySelector('[data-action="cancel"]').click(); }
-  finally { window.confirm = confirm; }
-  assert(state.renovationCategories[0].name === "Kitchen" && add.elements.namedItem("name").value === "Add draft", "Category Cancel changed saved or Add values");
-  assert(!card.querySelector("form") && noEntryFocus(), "Category Cancel did not finish locally");
+  renovationCard().querySelector('[aria-label="Monthly plan for Cabinets"]').click();
+  for (const action of byId("page-renovation").querySelectorAll("button")) {
+    const label = action.getAttribute("aria-label");
+    assert(label && action.title && action.textContent.trim() === "" && action.querySelector("svg.icon"), `Button "${action.textContent.trim() || label}" is not an icon button`);
+  }
+  const info = byId("page-renovation").querySelector("details.info");
+  assert(info && info.textContent.includes("do not change Expenses"), "Intro is not an info tip");
+  assert(!info.open, "Info tip starts open");
+  info.querySelector("summary").click();
+  assert(info.open, "Info tip does not open on click");
+  assert(document.querySelector('[data-nav="renovation"] use').getAttribute("href") === "#i-tools", "Renovation nav does not use the wrench icon");
+  showPage("home");
+  assert(byId("home-renovation").querySelector("summary use").getAttribute("href") === "#i-tools", "Home Renovation does not use the wrench icon");
 });
 
 await test("inline Spending and House forms do not duplicate document IDs", () => {
@@ -527,6 +509,42 @@ await test("cancelling a House edit returns focus without changing the House", (
   assert(document.activeElement === edit, "House cancel left focus in a hidden form");
 });
 
+await test("House Bank installment sits in More options, opens for saved values and for invalid input", () => {
+  showPage("houses");
+  const more = (form) => form.querySelector("details.more");
+  const add = byId("house-form");
+  assert(more(add) && !more(add).open && more(add).contains(add.elements.namedItem("installment")), "Bank installment is not under a closed More options");
+  const row = () => document.querySelector('#house-list [data-id="h1"]');
+  row().querySelector('[aria-label="Edit House One"]').click();
+  assert(!more(row().querySelector("form")).open, "More options opened for a house without a bank installment");
+  row().querySelector('form [data-action="cancel"]').click();
+  state.houses[0].installment = 900;
+  houses.render();
+  row().querySelector('[aria-label="Edit House One"]').click();
+  assert(more(row().querySelector("form")).open, "More options stayed closed for a saved bank installment");
+  row().querySelector('form [data-action="cancel"]').click();
+  byId("house-add").open = true;
+  for (const [name, value] of Object.entries({ name: "Flat", loan: "1000", ratePercent: "0", years: "1", startMonth: "2026-01", installment: "0" })) {
+    add.elements.namedItem(name).value = value;
+  }
+  add.requestSubmit();
+  assert(state.houses.length === 1, "Invalid bank installment was saved");
+  assert(more(add).open, "Invalid bank installment stayed hidden in closed More options");
+});
+
+await test("House card shows the loan term, and a projected payoff only when a bank installment changes it", () => {
+  showPage("houses");
+  const stats = () => Object.fromEntries([...document.querySelectorAll('#house-list [data-id="h1"] .stat')]
+    .map((box) => [box.querySelector("dt").textContent, box.querySelector("dd").textContent]));
+  houses.render();
+  assert(stats()["Loan term"] === "120 months", `Loan term reads ${stats()["Loan term"]}`);
+  assert(!("Projected payoff" in stats()), "Projected payoff shown for a standard installment");
+  assert(/^~\d+ paid \(estimated\)$/.test(stats().Payments), `Payments reads ${stats().Payments}`);
+  state.houses[0].installment = 1000;
+  houses.render();
+  assert(stats()["Projected payoff"] === "100 payments · 20 months earlier", `Projected payoff reads ${stats()["Projected payoff"]}`);
+});
+
 async function expensesFrame({ stress = false, completeAccount = false } = {}) {
   const doc = source.cloneNode(true);
   doc.querySelector('meta[http-equiv="Content-Security-Policy"]').remove();
@@ -553,7 +571,7 @@ async function expensesFrame({ stress = false, completeAccount = false } = {}) {
         account = JSON.parse(JSON.parse(options.body).backup).data;
         return Response.json({ ok: true });
       }
-      return Response.json({ backup: JSON.stringify({ schemaVersion: 8, data: account }) });
+      return Response.json({ backup: JSON.stringify({ schemaVersion: 9, data: account }) });
     };
     location.hash = "#/expenses";
   `;
@@ -601,9 +619,8 @@ await test("real-app inline edits across all modules reach the saved account sna
   house.elements.namedItem("name").value = "Updated house";
   house.requestSubmit();
   await go("renovation");
-  const card = doc.querySelector("#renovation-list details");
-  [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-  const item = card.querySelector("form");
+  doc.querySelector('#renovation-list [aria-label="Edit Cabinets"]').click();
+  const item = doc.querySelector("#renovation-list form");
   item.elements.namedItem("name").value = "Updated cabinets";
   item.requestSubmit();
   const deadline = performance.now() + 5000;
@@ -618,6 +635,65 @@ await test("real-app inline edits across all modules reach the saved account sna
   assert(saved.houses[0].name === "Updated house", "House edit did not reach the saved account");
   assert(saved.renovationItems[0].name === "Updated cabinets", "Renovation edit did not reach the saved account");
   assert(noEntryFocus(doc), "Cross-module save reopened an input keyboard");
+});
+
+await test("in-page actions on every module are labelled icon buttons, Add forms add and editors save", async () => {
+  const doc = await expensesFrame({ completeAccount: true });
+  doc.querySelector('[data-kind="commitments"] [aria-label="Edit Rent"]').click();
+  doc.querySelector('[aria-label="Edit Lunch"]').click();
+  doc.querySelector('[aria-label="Edit House One"]').click();
+  doc.querySelector('#renovation-list [aria-label="Edit Cabinets"]').click();
+  for (const page of ["expenses", "spending", "houses", "renovation"]) {
+    for (const action of doc.getElementById(`page-${page}`).querySelectorAll("button")) {
+      const label = action.getAttribute("aria-label");
+      assert(label && action.title && action.textContent.trim() === "" && action.querySelector("svg.icon"),
+        `${page}: button "${action.textContent.trim() || label}" is not a labelled icon button`);
+    }
+  }
+  const submitLabel = (form) => form.querySelector('[type="submit"]').getAttribute("aria-label");
+  for (const form of [
+    doc.querySelector('[data-kind="commitments"] [data-role="add"] form'), doc.getElementById("spending-form"),
+    doc.getElementById("house-form"), doc.getElementById("renovation-item-form"),
+  ]) assert(submitLabel(form) === "Add", `${form.id || "Expense"} Add submit is labelled ${submitLabel(form)}`);
+  for (const selector of ['[data-kind="commitments"] .items form', "#spending-list form", "#house-list form", "#renovation-list form"]) {
+    assert(submitLabel(doc.querySelector(selector)) === "Save", `${selector} submit is not labelled Save`);
+  }
+  for (const id of ["export-button", "import-button", "logout-button"]) {
+    assert(doc.getElementById(id).textContent.trim() !== "", `${id} lost its text`);
+  }
+});
+
+await test("Expense From, Until and Scenario sit in More options, open for saved values and for invalid input", async () => {
+  const doc = await expensesFrame();
+  const section = doc.querySelector('[data-kind="commitments"]');
+  const add = section.querySelector('[data-role="add"] form');
+  const more = (form) => form.querySelector("details.more");
+  section.querySelector('[data-role="add"]').open = true;
+  for (const name of ["startMonth", "endMonth", "scenario"]) {
+    assert(more(add)?.contains(add.elements.namedItem(name)), `${name} is not under More options`);
+  }
+  assert(!more(add).open, "More options starts open");
+  const lifestyleMore = doc.querySelector('[data-kind="lifestyle"] [data-role="add"] form details.more');
+  assert(lifestyleMore && !lifestyleMore.open, "Lifestyle From/Until are not under a closed More options");
+  const rent = section.querySelector('[aria-label="Edit Rent"]');
+  assert(rent, "Rent row is missing");
+  rent.click();
+  assert(!more(section.querySelector(".items form")).open, "More options opened for an expense without optional values");
+  section.querySelector('.items form [data-action="cancel"]').click();
+  add.elements.namedItem("name").value = "Gym";
+  add.elements.namedItem("amount").value = "50";
+  add.elements.namedItem("startMonth").value = "2027-05";
+  add.elements.namedItem("endMonth").value = "2027-01";
+  add.requestSubmit();
+  assert(!section.querySelector(".items").textContent.includes("Gym"), "Invalid Until was saved");
+  assert(more(add).open, "Invalid Until stayed hidden in closed More options");
+  add.elements.namedItem("endMonth").value = "";
+  add.elements.namedItem("endMonth").dispatchEvent(new doc.defaultView.Event("input", { bubbles: true }));
+  add.requestSubmit();
+  const gym = section.querySelector('[aria-label="Edit Gym"]');
+  assert(gym, `Valid Gym was not added: ${[...add.elements].map((node) => node.validationMessage).filter(Boolean).join(" | ")}`);
+  gym.click();
+  assert(more(section.querySelector(".items form")).open, "More options stayed closed for a saved From month");
 });
 
 await test("Expense Add completes without focusing another entry field", async () => {
@@ -697,6 +773,29 @@ await test("long Expense details do not spill into Scenario action buttons on na
   assert(doc.documentElement.scrollWidth <= doc.documentElement.clientWidth + 1, "Expense row overflows the page");
 });
 
+await test("Home Where income goes lists every cost grouped by type", () => {
+  state.income = 9000;
+  state.commitments = ["Rent", "Car", "Phone", "Power", "Water", "Gym"].map((name, index) => ({
+    id: `c${index}`, name, amount: 1200 - index * 100, everyMonths: 1,
+  }));
+  state.lifestyle = [
+    { id: "food", name: "Food", low: 100, high: 200, everyMonths: 1 },
+    { id: "fuel", name: "Fuel", low: 50, high: 90, everyMonths: 1 },
+  ];
+  state.spending = [];
+  home.render();
+  const card = [...byId("home-expenses").querySelectorAll(".card")]
+    .find((node) => node.querySelector("h3")?.textContent === "Where income goes");
+  assert(card, "Where income goes card is missing");
+  const groups = Object.fromEntries([...card.querySelectorAll(".bar-group")].map((group) => [
+    group.querySelector("h4")?.textContent,
+    [...group.querySelectorAll(".bar-row .label")].map((label) => label.textContent),
+  ]));
+  assert(JSON.stringify(Object.keys(groups)) === '["Commitments","Lifestyle"]', `Unexpected groups ${JSON.stringify(groups)}`);
+  assert(groups.Commitments.join() === "Rent,Car,Phone,Power,Water,Gym", `Commitments rows ${groups.Commitments}`);
+  assert(groups.Lifestyle.join() === "Food,Fuel", `Lifestyle rows ${groups.Lifestyle}`);
+});
+
 window.runLayoutChecks = ({ textSize = 16 } = {}) => {
   reset();
   document.body.style.fontSize = `${textSize}px`;
@@ -720,12 +819,7 @@ window.runLayoutChecks = ({ textSize = 16 } = {}) => {
       byId("house-list").querySelector('[aria-label^="Edit "]').click();
     }
     if (name === "renovation") {
-      const category = byId("renovation-categories").querySelector("details");
-      [...category.querySelectorAll("button")].find((node) => node.textContent === "Rename category").click();
-      const card = byId("renovation-list").querySelector("details");
-      [...card.querySelectorAll("button")].find((node) => node.textContent === "Edit item and payments").click();
-      const row = card.querySelector(".renovation-payments li");
-      [...row.querySelectorAll("button")].find((node) => node.textContent === "Edit payment").click();
+      byId("renovation-list").querySelector('[aria-label^="Edit "]').click();
     }
     const visible = (node) => node.getClientRects().length > 0;
     if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) {

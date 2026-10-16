@@ -1,5 +1,5 @@
 import { currentMonth, money, monthLabel, termLabel } from "./format.js";
-import { housesOverview, loanSummary, monthlyInstallment, repaysInFull } from "./loan.js";
+import { housesOverview, loanSummary, loanTermLabels, monthlyInstallment, repaysInFull } from "./loan.js";
 import { assertHouseDeletionAllowed } from "./renovation.js";
 import {
   MAX_AMOUNT,
@@ -11,7 +11,7 @@ import {
 } from "./rules.js";
 import {
   cloneEntryForm, discardForm, el, focusAction, focusRowAction, formSnapshot,
-  icon, iconButton, keepViewport, syncRows,
+  icon, iconButton, keepViewport, revealInvalid, setIconButton, syncMoreOptions, syncRows,
 } from "./ui.js";
 
 const byId = (id) => document.getElementById(id);
@@ -106,7 +106,8 @@ export function setupHouses({ getState, commit, newId, notify }) {
     field("startMonth").value = house.startMonth;
     field("installment").value = house.installment ?? "";
     editForm.setAttribute("aria-label", `Edit ${house.name}`);
-    editForm.querySelector('[type="submit"]').textContent = "Save";
+    setIconButton(editForm.querySelector('[type="submit"]'), "save", "Save");
+    syncMoreOptions(editForm);
     bindForm(editForm, id);
     editBaseline = formSnapshot(editForm);
     const card = [...list.children].find((node) => node.dataset.id === id);
@@ -207,7 +208,10 @@ export function setupHouses({ getState, commit, newId, notify }) {
     stat("Interest paid", money.format(summary.interestPaid));
     stat("Total interest", money.format(summary.totalInterest));
     stat("Total payable", money.format(summary.totalPayable));
-    stat("Payments", `${summary.paymentsMade} / ${summary.paymentsTotal}`);
+    const labels = loanTermLabels(house, summary);
+    stat("Loan term", labels.term);
+    if (labels.payoff) stat("Projected payoff", labels.payoff);
+    stat("Payments", labels.paid);
     stat("Ends", monthLabel(summary.finalMonth));
 
     const percent = Math.round(summary.progress * 1000) / 10;
@@ -263,6 +267,7 @@ export function setupHouses({ getState, commit, newId, notify }) {
 
   function bindForm(form, id = null) {
     const field = (name) => form.elements.namedItem(name);
+    revealInvalid(form);
     form.addEventListener("input", () => {
       clearValidity(form);
       updateHint(form);

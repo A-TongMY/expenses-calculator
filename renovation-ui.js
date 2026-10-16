@@ -1,503 +1,364 @@
 import { money, monthLabel, dateLabel } from "./format.js";
-import { MAX_AMOUNT, MAX_NAME_LENGTH, MAX_DESCRIPTION_LENGTH } from "./rules.js";
+import { MAX_AMOUNT } from "./rules.js";
 import { renovationDate, renovationMonth } from "./renovation-calendar.js";
 import {
-  saveRenovationItem, deleteRenovationItem, saveRenovationCategory,
-  deleteRenovationCategory, renovationReport,
+  deleteRenovationItem, deleteRenovationPayment, renovationReport,
+  saveRenovationItem, saveRenovationPayment, setInstallmentPlan,
 } from "./renovation.js";
 import { renderRenovationSummary } from "./renovation-summary.js";
 import {
-  cloneEntryForm, discardForm, el, focusAction, formSnapshot, keepViewport,
-  syncRows, syncSelectOptions,
+  cloneEntryForm, discardForm, el, focusAction, formSnapshot, iconButton,
+  keepViewport, setIconButton, syncRows, syncSelectOptions,
 } from "./ui.js";
 
-export function createRenovationEditor({ getState, commit, newId }) {
-  let draft = null;
-  let original = null;
-  let paymentDirty = false;
-  const begin = (value) => {
-    draft = structuredClone(value);
-    original = JSON.stringify(draft);
-    paymentDirty = false;
-  };
-  const requireDraft = () => {
-    if (!draft) throw new Error("Open a renovation item before editing.");
-  };
-  return {
-    start(itemId) {
-      const state = getState();
-      const item = state.renovationItems.find(({ id }) => id === itemId);
-      if (!item) throw new RangeError("The renovation item no longer exists.");
-      begin({ item, payments: state.renovationPayments.filter((payment) => payment.itemId === itemId) });
-    },
-    startNew(houseId, categoryId) {
-      begin({ item: { id: newId(), houseId, categoryId, name: "" }, payments: [] });
-    },
-    setItem(item) { requireDraft(); draft.item = structuredClone(item); },
-    setPayments(payments) { requireDraft(); draft.payments = structuredClone(payments); },
-    setPaymentDirty(value) { requireDraft(); paymentDirty = value; },
-    categories() {
-      requireDraft();
-      return getState().renovationCategories
-        .filter(({ houseId }) => houseId === draft.item.houseId)
-        .map(({ id, name }) => ({ id, name }));
-    },
-    save(today = renovationDate()) {
-      requireDraft();
-      if (paymentDirty) throw new RangeError("Stage or cancel the payment edit before saving all changes.");
-      const next = saveRenovationItem(getState(), draft.item, draft.payments, today);
-      commit(next);
-      draft = null;
-      original = null;
-      paymentDirty = false;
-    },
-    cancel() { draft = null; original = null; paymentDirty = false; },
-    snapshot() { return draft ? structuredClone(draft) : null; },
-    isDirty() { return draft !== null && (paymentDirty || JSON.stringify(draft) !== original); },
-  };
-}
+const byId = (id) => document.getElementById(id);
 
-const button = (label, action) => {
-  const node = el("button", "secondary", label);
-  node.type = "button";
-  node.addEventListener("click", action);
-  return node;
-};
-const labeled = (label, control) => {
+function field(label, control) {
   const node = el("label", "field");
   node.append(el("span", "", label), control);
   return node;
-};
-const input = (name, type, value = "") => {
-  const node = el("input");
-  node.name = name;
-  node.type = type;
-  node.value = value;
-  if (type === "number") {
-    node.min = 0;
-    node.max = MAX_AMOUNT;
-    node.step = "0.01";
-  }
-  if (type === "text") node.maxLength = MAX_NAME_LENGTH;
+}
+
+function pair(...nodes) {
+  const node = el("div", "pair");
+  node.append(...nodes);
   return node;
-};
-const option = (value, label) => {
+}
+
+function control(tag, name, properties = {}) {
+  const node = el(tag);
+  node.name = name;
+  Object.assign(node, properties);
+  return node;
+}
+
+const amountInput = (name, value) => control("input", name, {
+  type: "number", required: true, min: "0.01", max: String(MAX_AMOUNT), step: "0.01",
+  inputMode: "decimal", placeholder: "0.00", autocomplete: "off", value: value === undefined ? "" : String(value),
+});
+
+function option(value, label) {
   const node = el("option", "", label);
   node.value = value;
   return node;
-};
-
-function scheduleTable(rows) {
-  const table = el("table", "data-table");
-  const head = el("tr");
-  for (const label of ["Month", "Amount", "Paid", "Outstanding", "Status"]) {
-    const th = el("th", "", label);
-    th.scope = "col";
-    head.append(th);
-  }
-  const thead = el("thead");
-  thead.append(head);
-  const body = el("tbody");
-  for (const row of rows) {
-    const tr = el("tr");
-    const timing = row.remaining === 0 ? "" :
-      row.dueStatus === "past" ? " / Overdue" : row.dueStatus === "current" ? " / Due this month" : " / Upcoming";
-    tr.append(
-      el("td", "", monthLabel(row.month)), el("td", "", money.format(row.amount)),
-      el("td", "", money.format(row.paid)), el("td", "", money.format(row.remaining)),
-      el("td", "", `${row.paymentStatus}${timing}`),
-    );
-    body.append(tr);
-  }
-  table.append(thead, body);
-  const wrap = el("div", "table-wrap");
-  wrap.append(table);
-  return wrap;
 }
 
+function editorForm(fields, extraActions = []) {
+  const form = el("form", "inline-editor");
+  form.autocomplete = "off";
+  const message = el("p", "hint");
+  message.dataset.role = "message";
+  message.setAttribute("role", "status");
+  const save = iconButton({ name: "save", label: "Save", className: "primary", onClick: () => {} });
+  save.type = "submit";
+  const cancel = iconButton({ name: "x", label: "Cancel", onClick: () => {} });
+  cancel.dataset.action = "cancel";
+  const actions = el("div", "actions");
+  actions.append(save, cancel, ...extraActions);
+  form.append(...fields, message, actions);
+  return form;
+}
+
+function figuresText(entry) {
+  const parts = [];
+  if (entry.budget !== null) parts.push(`Budget ${money.format(entry.budget)}`);
+  if (entry.actualCost !== null) parts.push(`Actual ${money.format(entry.actualCost)}`);
+  parts.push(`Paid ${money.format(entry.paid)}`);
+  if (entry.outstanding !== null) parts.push(`Outstanding ${money.format(entry.outstanding)}`);
+  if (entry.budget !== null && entry.actualCost !== null && entry.budget !== entry.actualCost) {
+    const gap = Math.abs(Math.round((entry.actualCost - entry.budget) * 100)) / 100;
+    parts.push(`${money.format(gap)} ${entry.actualCost > entry.budget ? "over" : "under"} budget`);
+  }
+  return parts.join(" · ");
+}
+
+function planText({ item, covered, due, overdue }) {
+  const plan = item.installmentPlan;
+  if (!plan) return "";
+  const parts = [
+    `${money.format(plan.amount)} × ${plan.count} from ${monthLabel(plan.startMonth)}`,
+    `${covered} of ${plan.count} covered`,
+  ];
+  if (due > 0) parts.push(`${money.format(due)} due`);
+  if (overdue > 0) parts.push(`${money.format(overdue)} overdue`);
+  return parts.join(" · ");
+}
+
+const paymentText = (payment) =>
+  `${dateLabel(payment.date)} · ${money.format(payment.amount)} · ${payment.kind === "deposit" ? "Deposit" : "Payment"}`;
+
 export function setupRenovation({ getState, commit, newId }) {
-  const byId = (id) => document.getElementById(id);
   const houseSelect = byId("renovation-house");
   const overview = byId("renovation-overview");
-  const categoriesHost = byId("renovation-categories");
-  const categoryForm = byId("renovation-category-form");
-  const categoryName = categoryForm.elements.namedItem("name");
-  const editorHost = byId("renovation-editor");
   const list = byId("renovation-list");
-  const message = byId("renovation-message");
-  let editor = createRenovationEditor({ getState, commit, newId });
-  let addSession = null;
-  let editingItemId = null;
+  const addPanel = byId("renovation-add");
+  const addForm = byId("renovation-item-form");
   let selectedHouse = "";
-  let categoryEditingId = null;
-  let paymentEditingId = null;
-  let itemForm = null;
-  let paymentForm = null;
-  let paymentList = null;
-  let paymentBaseline = null;
-  let paymentHome = null;
-  let paymentAddDraft = null;
-  let categoryEditForm = null;
-  let categoryBaseline = "";
-  const expanded = new Set();
-  categoryName.maxLength = MAX_NAME_LENGTH;
+  // The one open inline editor: { kind: item|payment|plan, itemId, paymentId, action, form, host, baseline }.
+  let editor = null;
 
-  const inform = (error, host = null) => {
-    if (!host) { message.textContent = error.message; return; }
-    let status = host.querySelector('[role="status"]');
-    if (!status) {
-      status = el("p", "notice");
-      status.setAttribute("role", "status");
-      host.append(status);
-    }
-    status.textContent = error.message;
-  };
-  const attempt = (operation, host = null) => {
-    try {
-      operation();
-      message.textContent = "";
-      host?.querySelector('[role="status"]')?.remove();
-    } catch (error) { inform(error, host); }
-  };
-  const discardAllowed = () => !editor.isDirty() || confirm("Discard unsaved renovation item and payment changes?");
-  const clearEditor = () => {
-    editor.cancel();
-    itemForm = null;
-    paymentForm = null;
-    paymentList = null;
-    paymentEditingId = null;
-    paymentBaseline = null;
-    paymentAddDraft = null;
-    editingItemId = null;
-    message.textContent = "";
-    editorHost.replaceChildren();
-    editorHost.hidden = true;
-    byId("renovation-add-item").parentElement.after(editorHost);
-    if (addSession) {
-      ({
-        editor, itemForm, paymentForm, paymentList, paymentHome, paymentBaseline,
-        paymentAddDraft, paymentEditingId,
-      } = addSession);
-      editorHost.replaceChildren(...addSession.nodes);
-      editorHost.hidden = false;
-      addSession = null;
-    }
-  };
+  const childById = (parent, id) => [...parent.children].find((node) => node.dataset.id === id);
+  const cardOf = (itemId) => childById(list, itemId);
+  const rowOf = (card, paymentId) => childById(card.querySelector(".payments"), paymentId);
+  const itemOf = (itemId) => getState().renovationItems.find(({ id }) => id === itemId);
+  const messageOf = (form) => form.querySelector('[data-role="message"]');
 
-  function finishItem() {
-    const id = editingItemId;
+  function opener({ itemId, paymentId, action }) {
+    const card = cardOf(itemId);
+    if (!card) return null;
+    if (paymentId) return rowOf(card, paymentId)?.querySelector('[data-action="edit"]');
+    return card.querySelector(`.item-head [data-action="${action}"]`);
+  }
+
+  function itemFromForm(form, base) {
+    const value = (name) => form.elements.namedItem(name).value;
+    const { notes, budget, actualCost, ...item } = { ...base, name: value("name").trim() };
+    if (value("notes").trim()) item.notes = value("notes").trim();
+    for (const key of ["budget", "actualCost"]) if (value(key) !== "") item[key] = Number(value(key));
+    return item;
+  }
+
+  function closeEditor() {
+    if (!editor) return;
+    editor.form.remove();
+    editor.host.classList.remove("editing");
+    editor = null;
+  }
+
+  function finish(next) {
+    const target = { ...editor };
     keepViewport(() => {
-      clearEditor();
-      render();
-      const card = [...list.children].find((node) => node.dataset.id === id);
-      focusAction(card?.querySelector('[data-action="edit-item"]') ?? byId("renovation-add-item"));
+      closeEditor();
+      commit(next);
     });
+    focusAction(opener(target));
   }
 
-  function closeCategory() {
-    categoryEditForm?.remove();
-    categoryEditForm = null;
-    categoryEditingId = null;
-  }
-
-  function readDraftFields() {
-    const snapshot = editor.snapshot();
-    if (!snapshot || !itemForm) return;
-    const field = (name) => itemForm.elements.namedItem(name);
-    const item = {
-      id: snapshot.item.id, houseId: snapshot.item.houseId,
-      categoryId: field("categoryId").value, name: field("name").value.trim(),
-    };
-    for (const key of ["budget", "actualCost"]) {
-      if (field(key).value !== "") item[key] = Number(field(key).value);
+  function attempt(form, change) {
+    let next;
+    try {
+      next = change(getState());
+    } catch (error) {
+      messageOf(form).textContent = error.message;
+      return;
     }
-    if (field("notes").value.trim()) item.notes = field("notes").value.trim();
-    const startMonth = field("startMonth").value;
-    const amount = field("installmentAmount").value;
-    const count = field("count").value;
-    if (startMonth !== "" || amount !== "" || count !== "") {
-      item.installmentPlan = { startMonth, amount: Number(amount), count: Number(count) };
-    }
-    editor.setItem(item);
+    finish(next);
   }
 
-  function renderDraftPayments() {
-    const draft = editor.snapshot();
-    if (!draft) return;
-    paymentList.replaceChildren();
-    for (const payment of draft.payments) {
-      const row = el("li");
-      row.append(
-        el("span", "", `${dateLabel(payment.date)} / ${payment.kind} / ${money.format(payment.amount)}${payment.installmentMonth ? ` / ${monthLabel(payment.installmentMonth)}` : " / Unlinked"}`),
-        button("Edit payment", () => {
-          if (paymentEditingId === payment.id) return;
-          if (paymentEditingId && paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
-          if (!paymentEditingId) paymentAddDraft = { values: paymentValues(), baseline: paymentBaseline };
-          paymentEditingId = payment.id;
-          for (const key of ["date", "amount", "kind", "installmentMonth"]) {
-            paymentForm.elements.namedItem(key).value = payment[key] ?? "";
-          }
-          rememberPaymentFields();
-          paymentForm.classList.add("inline-editor");
-          row.append(paymentForm);
-        }),
-        button("Unlink", () => {
-          const { installmentMonth, ...unlinked } = payment;
-          keepViewport(() => {
-            editor.setPayments(editor.snapshot().payments.map((entry) => entry.id === payment.id ? unlinked : entry));
-            renderDraftPayments();
-          });
-        }),
-        button("Remove payment", () => {
-          if (!confirm("Remove this payment from the draft? It is applied only when you save all changes.")) return;
-          if (paymentEditingId === payment.id && paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
-          keepViewport(() => {
-            editor.setPayments(editor.snapshot().payments.filter(({ id }) => id !== payment.id));
-            if (paymentEditingId === payment.id) resetPayment();
-            renderDraftPayments();
-            focusAction(paymentList.querySelector("button") ?? paymentHome.querySelector("button"));
-          });
-        }),
-      );
-      row.dataset.id = payment.id;
-      paymentList.append(row);
-      if (paymentEditingId === payment.id) row.append(paymentForm);
+  function itemForm(item) {
+    const form = cloneEntryForm(addForm);
+    for (const name of ["name", "notes", "budget", "actualCost"]) {
+      form.elements.namedItem(name).value = item[name] ?? "";
     }
+    messageOf(form).textContent = "";
+    setIconButton(form.querySelector('[type="submit"]'), "save", "Save");
+    return form;
   }
 
-  function paymentFieldsChanged() {
-    return JSON.stringify(paymentValues()) !== paymentBaseline;
-  }
-
-  function unfinishedPayment() {
-    return paymentFieldsChanged() || Boolean(paymentAddDraft &&
-      JSON.stringify(paymentAddDraft.values) !== paymentAddDraft.baseline);
-  }
-
-  function paymentValues() {
-    return ["date", "amount", "kind", "installmentMonth"]
-      .map((key) => paymentForm.elements.namedItem(key).value);
-  }
-
-  function rememberPaymentFields() {
-    paymentBaseline = JSON.stringify(paymentValues());
-    editor.setPaymentDirty(unfinishedPayment());
-  }
-
-  function resetPayment() {
-    paymentEditingId = null;
-    paymentHome.append(paymentForm);
-    paymentForm.classList.remove("inline-editor");
-    if (paymentAddDraft) {
-      ["date", "amount", "kind", "installmentMonth"].forEach((key, index) => {
-        paymentForm.elements.namedItem(key).value = paymentAddDraft.values[index];
-      });
-      paymentBaseline = paymentAddDraft.baseline;
-      paymentAddDraft = null;
-      editor.setPaymentDirty(paymentFieldsChanged());
-    } else {
-      paymentForm.reset();
-      paymentForm.elements.namedItem("date").value = renovationDate();
-      rememberPaymentFields();
-    }
-  }
-
-  function syncDraftCategories() {
-    if (!itemForm) return;
-    const control = itemForm.elements.namedItem("categoryId");
-    const previous = control.value;
-    const categories = editor.categories();
-    const options = categories.map(({ id, name }) => ({ value: id, label: name }));
-    if (!categories.some(({ id }) => id === previous)) {
-      options.unshift({ value: "", label: "Choose a category" });
-    }
-    syncSelectOptions(control, options);
-    if (!categories.some(({ id }) => id === previous)) control.value = "";
-    readDraftFields();
-  }
-
-  function openEditor(itemId) {
-    if (itemId && editingItemId === itemId) return;
-    if (!itemId && itemForm && !editingItemId) return;
-    if (editingItemId) {
-      if (!discardAllowed()) return;
-      clearEditor();
-      if (!itemId && itemForm) return;
-    }
-    if (itemId && itemForm && !editingItemId) {
-      addSession = {
-        editor, itemForm, paymentForm, paymentList, paymentHome, paymentBaseline,
-        paymentAddDraft, paymentEditingId, nodes: [...editorHost.childNodes],
-      };
-      editorHost.replaceChildren();
-      editor = createRenovationEditor({ getState, commit, newId });
-    }
-    editingItemId = itemId ?? null;
-    if (itemId) editor.start(itemId);
-    else {
-      const category = getState().renovationCategories.find((entry) => entry.houseId === selectedHouse);
-      if (!category) throw new RangeError("Add a renovation category for this house first.");
-      editor.startNew(selectedHouse, category.id);
-    }
-    paymentEditingId = null;
-    const { item } = editor.snapshot();
-    editorHost.hidden = false;
-    itemForm = el("form", "renovation-form");
-    const category = el("select");
-    category.name = "categoryId";
-    category.required = true;
-    for (const entry of editor.categories()) {
-      category.append(option(entry.id, entry.name));
-    }
-    category.value = item.categoryId;
-    const name = input("name", "text", item.name);
-    name.required = true;
-    const notes = el("textarea");
-    notes.name = "notes";
-    notes.value = item.notes ?? "";
-    notes.maxLength = MAX_DESCRIPTION_LENGTH;
-    const start = input("startMonth", "month", item.installmentPlan?.startMonth ?? "");
-    start.min = "1900-01";
-    start.max = "9999-12";
-    const count = input("count", "number", item.installmentPlan?.count ?? "");
-    count.min = 1;
-    count.max = 600;
-    count.step = 1;
-    const amount = input("installmentAmount", "number", item.installmentPlan?.amount ?? "");
-    amount.min = "0.01";
-    const save = el("button", "", "Save all changes");
-    save.type = "submit";
-    itemForm.append(
-      labeled("Item name", name), labeled("Category", category),
-      labeled("Budget (optional)", input("budget", "number", item.budget ?? "")),
-      labeled("Actual total cost (optional)", input("actualCost", "number", item.actualCost ?? "")),
-      labeled("Notes (optional)", notes),
-      el("h3", "", "Monthly installment plan (optional)"),
-      labeled("Start month", start), labeled("Installment amount", amount), labeled("Payment count", count),
-      button("Remove plan", () => {
-        for (const key of ["startMonth", "installmentAmount", "count"]) itemForm.elements.namedItem(key).value = "";
-        readDraftFields();
-      }),
-      save,
-      button("Cancel item changes", () => {
-        if (!discardAllowed()) return;
-        finishItem();
-      }),
-    );
-    itemForm.addEventListener("input", readDraftFields);
-    itemForm.addEventListener("change", readDraftFields);
-    itemForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      attempt(() => {
-        readDraftFields();
-        editor.save();
-        finishItem();
-      }, editorHost);
+  function paymentForm(payment) {
+    const today = renovationDate();
+    const date = control("input", "date", {
+      type: "date", required: true, max: today, value: payment?.date ?? today, autocomplete: "off",
     });
-    paymentForm = el("form", "renovation-form");
-    const date = input("date", "date", renovationDate());
-    date.min = "1900-01-01";
-    date.max = renovationDate();
-    date.required = true;
-    const paymentAmount = input("amount", "number");
-    paymentAmount.min = "0.01";
-    paymentAmount.required = true;
-    const kind = el("select");
-    kind.name = "kind";
+    const kind = control("select", "kind");
     kind.append(option("payment", "Payment"), option("deposit", "Deposit"));
-    const installment = input("installmentMonth", "month");
-    installment.min = "1900-01";
-    installment.max = "9999-12";
-    const stage = el("button", "", "Stage payment");
-    stage.type = "submit";
-    paymentForm.append(
-      labeled("Payment date", date), labeled("Payment amount", paymentAmount),
-      labeled("Payment label", kind), labeled("Linked installment month (optional)", installment),
-      stage, button("Cancel payment edit", () => {
-        if (paymentFieldsChanged() && !confirm("Discard unstaged payment changes?")) return;
-        const id = paymentEditingId;
-        keepViewport(() => {
-          resetPayment();
-          const row = [...paymentList.children].find((node) => node.dataset.id === id);
-          focusAction(row?.querySelector("button") ?? stage);
-        });
-      }),
-    );
-    rememberPaymentFields();
-    for (const event of ["input", "change"]) {
-      paymentForm.addEventListener(event, () => editor.setPaymentDirty(unfinishedPayment()));
-    }
-    paymentForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      attempt(() => {
-        readDraftFields();
-        const draft = editor.snapshot();
-        if (draft.item.actualCost === undefined) throw new RangeError("Enter actual total cost before staging a payment.");
-        const payment = {
-          id: paymentEditingId ?? newId(), itemId: draft.item.id,
-          date: date.value, amount: Number(paymentAmount.value), kind: kind.value,
-          ...(installment.value ? { installmentMonth: installment.value } : {}),
-        };
-        editor.setPayments(paymentEditingId
-          ? draft.payments.map((entry) => entry.id === paymentEditingId ? payment : entry)
-          : [...draft.payments, payment]);
-        const id = paymentEditingId;
-        keepViewport(() => {
-          resetPayment();
-          renderDraftPayments();
-          const row = [...paymentList.children].find((node) => node.dataset.id === id);
-          focusAction(row?.querySelector("button") ?? stage);
-        });
-      }, editorHost);
+    kind.value = payment?.kind ?? "payment";
+    return editorForm([pair(field("Date", date), field("Amount (MYR)", amountInput("amount", payment?.amount))), field("Type", kind)]);
+  }
+
+  function planForm(item) {
+    const plan = item.installmentPlan;
+    const start = control("input", "startMonth", {
+      type: "month", required: true, pattern: "\\d{4}-\\d{2}", placeholder: "YYYY-MM",
+      value: plan?.startMonth ?? renovationMonth(), autocomplete: "off",
     });
-    paymentList = el("ul", "renovation-payments");
-    paymentHome = el("div");
-    paymentHome.append(paymentForm);
-    editorHost.replaceChildren(
-      el("h2", "", itemId ? "Edit renovation item" : "New renovation item"),
-      el("p", "note", "Item, plan, and payment changes are staged. Use Save all changes to apply them together. Deposits reduce the balance; passing an installment date never records payment."),
-      itemForm, el("h3", "", "Actual payments"), paymentList, paymentHome,
+    const count = control("input", "count", {
+      type: "number", required: true, min: "1", max: "600", step: "1", inputMode: "numeric",
+      placeholder: "12", autocomplete: "off", value: plan ? String(plan.count) : "",
+    });
+    const remove = plan ? [iconButton({
+      name: "trash", label: "Remove plan", className: "danger", onClick: () => {
+        if (!confirm("Remove the monthly plan?")) return;
+        attempt(editor.form, (state) => setInstallmentPlan(state, item.id, null));
+      },
+    })] : [];
+    return editorForm([
+      pair(field("First month", start), field("Monthly (MYR)", amountInput("amount", plan?.amount))),
+      field("Installments", count),
+    ], remove);
+  }
+
+  function submitEditor() {
+    const { kind, itemId, paymentId, form } = editor;
+    const value = (name) => form.elements.namedItem(name).value;
+    attempt(form, (state) => {
+      if (kind === "item") return saveRenovationItem(state, itemFromForm(form, itemOf(itemId)));
+      if (kind === "plan") {
+        return setInstallmentPlan(state, itemId, {
+          startMonth: value("startMonth"), amount: Number(value("amount")), count: Number(value("count")),
+        });
+      }
+      const previous = state.renovationPayments.find(({ id }) => id === paymentId);
+      return saveRenovationPayment(state, {
+        ...previous, id: paymentId ?? newId(), itemId,
+        date: value("date"), amount: Number(value("amount")), kind: value("kind"),
+      });
+    });
+  }
+
+  function openEditor(kind, itemId, paymentId = null) {
+    if (editor && editor.kind === kind && editor.itemId === itemId && editor.paymentId === paymentId) return;
+    if (editor && !discardForm(editor.form, editor.baseline)) return;
+    closeEditor();
+    const item = itemOf(itemId);
+    const card = cardOf(itemId);
+    if (!item || !card) return;
+    let host = card.querySelector('[data-role="editor"]');
+    let form;
+    let action = { item: "edit", plan: "plan", payment: "add-payment" }[kind];
+    if (kind === "item") form = itemForm(item);
+    else if (kind === "plan") form = planForm(item);
+    else {
+      const payment = paymentId && getState().renovationPayments.find(({ id }) => id === paymentId);
+      form = paymentForm(payment);
+      if (payment) {
+        host = rowOf(card, paymentId);
+        host.classList.add("editing");
+        action = "edit";
+      }
+    }
+    host.append(form);
+    editor = { kind, itemId, paymentId, action, form, host, baseline: formSnapshot(form) };
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitEditor();
+    });
+    form.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+      if (!discardForm(editor.form, editor.baseline)) return;
+      const target = { ...editor };
+      closeEditor();
+      focusAction(opener(target));
+    });
+  }
+
+  function deletePayment(itemId, paymentId) {
+    if (!confirm("Delete this payment?")) return;
+    const next = deleteRenovationPayment(getState(), paymentId);
+    keepViewport(() => {
+      if (editor?.paymentId === paymentId) closeEditor();
+      commit(next);
+    });
+    focusAction(cardOf(itemId)?.querySelector('.item-head [data-action="add-payment"]'));
+  }
+
+  function deleteItem(itemId) {
+    const item = itemOf(itemId);
+    if (!item || !confirm(`Delete ${item.name} and its payments?`)) return;
+    const next = deleteRenovationItem(getState(), itemId);
+    keepViewport(() => {
+      if (editor?.itemId === itemId) closeEditor();
+      commit(next);
+    });
+    focusAction(addPanel.querySelector("summary"));
+  }
+
+  function buildPaymentRow(itemId, payment) {
+    const row = el("li");
+    row.dataset.id = payment.id;
+    const actions = el("div", "row-actions");
+    const edit = iconButton({ name: "edit", label: "Edit payment", onClick: () => openEditor("payment", itemId, payment.id) });
+    edit.dataset.action = "edit";
+    const remove = iconButton({ name: "trash", label: "Delete payment", className: "danger", onClick: () => deletePayment(itemId, payment.id) });
+    remove.dataset.action = "delete";
+    actions.append(edit, remove);
+    row.append(el("span", "row-text"), actions);
+    return row;
+  }
+
+  function buildCard(itemId) {
+    const card = el("li", "renovation-item");
+    card.dataset.id = itemId;
+    const head = el("div", "item-head");
+    const actions = el("div", "row-actions");
+    const action = (key, name, className, onClick) => {
+      const button = iconButton({ name, label: key, className, onClick });
+      button.dataset.action = key;
+      return button;
+    };
+    actions.append(
+      action("edit", "edit", "", () => openEditor("item", itemId)),
+      action("add-payment", "card", "", () => openEditor("payment", itemId)),
+      action("plan", "calendar", "", () => openEditor("plan", itemId)),
+      action("delete", "trash", "danger", () => deleteItem(itemId)),
     );
-    renderDraftPayments();
-    if (itemId) {
-      const card = [...list.children].find((node) => node.dataset.id === itemId);
-      card.open = true;
-      expanded.add(itemId);
-      card.querySelector(".panel-body").append(editorHost);
+    head.append(el("strong", "name"), actions);
+    const line = (role, className) => {
+      const node = el("p", className);
+      node.dataset.role = role;
+      return node;
+    };
+    const slot = el("div");
+    slot.dataset.role = "editor";
+    card.append(head, line("notes", "notes"), line("figures", "figures"), line("plan", "plan"), slot, el("ul", "payments"));
+    return card;
+  }
+
+  function fillCard(card, entry) {
+    const { item } = entry;
+    card.querySelector(".name").textContent = item.name;
+    const labels = {
+      edit: `Edit ${item.name}`,
+      "add-payment": `Add payment to ${item.name}`,
+      plan: `Monthly plan for ${item.name}`,
+      delete: `Delete ${item.name}`,
+    };
+    for (const button of card.querySelectorAll(".item-head [data-action]")) {
+      const label = labels[button.dataset.action];
+      const waiting = entry.actualCost === null && ["add-payment", "plan"].includes(button.dataset.action);
+      button.setAttribute("aria-label", label);
+      button.disabled = waiting;
+      button.title = waiting ? "Set actual cost first" : label;
+    }
+    const notes = card.querySelector('[data-role="notes"]');
+    notes.textContent = item.notes ?? "";
+    notes.hidden = !item.notes;
+    card.querySelector('[data-role="figures"]').textContent = figuresText(entry);
+    const plan = card.querySelector('[data-role="plan"]');
+    plan.textContent = planText(entry);
+    plan.hidden = !item.installmentPlan;
+    const payments = card.querySelector(".payments");
+    syncRows(payments, entry.payments, (payment) => childById(payments, payment.id) ?? buildPaymentRow(item.id, payment));
+    for (const payment of entry.payments) {
+      childById(payments, payment.id).querySelector(".row-text").textContent = paymentText(payment);
     }
   }
 
-  categoryForm.addEventListener("submit", (event) => {
+  addForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    attempt(() => {
-      commit(saveRenovationCategory(getState(), {
-        id: newId(), houseId: selectedHouse, name: categoryName.value.trim(),
-      }));
-      categoryForm.reset();
-      render();
-      focusAction(categoryForm.querySelector('[type="submit"]'));
+    let next;
+    try {
+      next = saveRenovationItem(getState(), itemFromForm(addForm, { id: newId(), houseId: selectedHouse }));
+    } catch (error) {
+      messageOf(addForm).textContent = error.message;
+      return;
+    }
+    keepViewport(() => {
+      commit(next);
+      addForm.reset();
+      messageOf(addForm).textContent = "";
     });
+    focusAction(addForm.querySelector('[type="submit"]'));
   });
-  byId("renovation-category-cancel").addEventListener("click", () => {
-    categoryForm.reset();
-  });
-  byId("renovation-add-item").addEventListener("click", () => attempt(() => openEditor()));
 
   function selectHouse(id) {
     if (id === selectedHouse) return true;
     if (!getState().houses.some((house) => house.id === id)) return false;
-    if (!discardForm(categoryEditForm, categoryBaseline)) { houseSelect.value = selectedHouse; return false; }
-    if (!discardAllowed()) { houseSelect.value = selectedHouse; return false; }
-    if (addSession?.editor.isDirty() && !confirm("Discard unsaved new renovation item changes?")) {
+    if (editor && !discardForm(editor.form, editor.baseline)) {
       houseSelect.value = selectedHouse;
       return false;
     }
-    addSession = null;
-    clearEditor();
-    closeCategory();
+    closeEditor();
     selectedHouse = id;
-    categoryEditingId = null;
-    categoryForm.reset();
     render();
     return true;
   }
@@ -506,7 +367,7 @@ export function setupRenovation({ getState, commit, newId }) {
   function render() {
     const state = getState();
     if (!state.houses.some(({ id }) => id === selectedHouse)) {
-      clearEditor();
+      closeEditor();
       selectedHouse = state.houses[0]?.id ?? "";
     }
     syncSelectOptions(houseSelect, state.houses.map(({ id, name }) => ({ value: id, label: name })));
@@ -515,134 +376,24 @@ export function setupRenovation({ getState, commit, newId }) {
     byId("renovation-no-houses").hidden = Boolean(selectedHouse);
     byId("renovation-workspace").hidden = !selectedHouse;
     if (!selectedHouse) return;
-    if (paymentForm) paymentForm.elements.namedItem("date").max = renovationDate();
-    syncDraftCategories();
     const report = renovationReport(state, selectedHouse);
     renderRenovationSummary(overview, report);
-    const openCategories = new Set(
-      [...categoriesHost.children].filter((card) => card.open).map((card) => card.dataset.id),
-    );
-    const buildCategory = (category) => {
-      const card = el("details", "panel");
-      card.dataset.id = category.categoryId;
-      card.open = openCategories.has(category.categoryId);
-      const summary = el("summary", "", category.name);
-      const content = el("div", "panel-body cards");
-      const figures = el("div", "cards");
-      figures.dataset.role = "category-summary";
-      renderRenovationSummary(figures, category);
-      content.append(figures);
-      content.append(
-        button("Rename category", () => {
-          if (categoryEditingId === category.categoryId) return;
-          if (!discardForm(categoryEditForm, categoryBaseline)) return;
-          closeCategory();
-          categoryEditingId = category.categoryId;
-          categoryEditForm = cloneEntryForm(categoryForm);
-          const form = categoryEditForm;
-          form.setAttribute("aria-label", `Rename ${category.name}`);
-          form.elements.namedItem("name").value = category.name;
-          form.querySelector('[type="submit"]').textContent = "Save";
-          form.querySelector('[data-action="cancel"]').addEventListener("click", () => {
-            if (!discardForm(form, categoryBaseline)) return;
-            keepViewport(() => {
-              closeCategory();
-              focusAction(content.querySelector("button"));
-            });
-          });
-          form.addEventListener("submit", (event) => {
-            event.preventDefault();
-            attempt(() => {
-              const next = saveRenovationCategory(getState(), {
-                id: category.categoryId, houseId: selectedHouse,
-                name: form.elements.namedItem("name").value.trim(),
-              });
-              keepViewport(() => {
-                closeCategory();
-                commit(next);
-                render();
-                const saved = [...categoriesHost.children].find((node) => node.dataset.id === category.categoryId);
-                focusAction(saved?.querySelector("button"));
-              });
-            }, form);
-          });
-          categoryBaseline = formSnapshot(form);
-          content.append(form);
-        }),
-        button("Delete category", () => attempt(() => {
-          if (!confirm(`Delete category "${category.name}"?`)) return;
-          if (categoryEditingId === category.categoryId && !discardForm(categoryEditForm, categoryBaseline)) return;
-          const next = deleteRenovationCategory(getState(), category.categoryId);
-          keepViewport(() => {
-            if (categoryEditingId === category.categoryId) closeCategory();
-            commit(next);
-            render();
-            focusAction(categoriesHost.querySelector("button") ?? categoryForm.querySelector('[type="submit"]'));
-          });
-        })),
-      );
-      card.append(summary, content);
-      return card;
-    };
-    syncRows(categoriesHost, report.categories.map((category) => ({ ...category, id: category.categoryId })),
-      buildCategory, categoryEditingId);
-    if (categoryEditingId) {
-      const category = report.categories.find(({ categoryId }) => categoryId === categoryEditingId);
-      const card = [...categoriesHost.children].find((node) => node.dataset.id === categoryEditingId);
-      if (category && card) renderRenovationSummary(card.querySelector('[data-role="category-summary"]'), category);
-    }
-    byId("renovation-add-item").disabled = report.categories.length === 0;
-    const buildItem = (entry) => {
-      const { item } = entry;
-      const card = el("details", "panel");
-      card.dataset.id = item.id;
-      card.open = expanded.has(item.id);
-      card.addEventListener("toggle", () => {
-        if (card.open) expanded.add(item.id); else expanded.delete(item.id);
-      });
-      const summary = el("summary", "", `${item.name} / Expected ${money.format(entry.expected)}`);
-      const content = el("div", "panel-body");
-      const category = state.renovationCategories.find(({ id }) => id === item.categoryId);
-      content.append(
-        el("p", "", `${category.name} / Budget: ${entry.budget === null ? "Not budgeted" : money.format(entry.budget)} / Actual: ${entry.actualCost === null ? "Not known" : money.format(entry.actualCost)}`),
-        el("p", "", `Paid: ${money.format(entry.paid)} / Outstanding: ${entry.outstanding === null ? "Not applicable" : money.format(entry.outstanding)} / Unscheduled: ${entry.unscheduled === null ? "Not applicable" : money.format(entry.unscheduled)}`),
-      );
-      if (item.notes) content.append(el("p", "", item.notes));
-      if (entry.installments.length) content.append(scheduleTable(entry.installments));
-      for (const payment of state.renovationPayments.filter((payment) => payment.itemId === item.id)) {
-        content.append(el("p", "note", `${dateLabel(payment.date)} / ${payment.kind} / ${money.format(payment.amount)}${payment.installmentMonth ? ` / ${monthLabel(payment.installmentMonth)}` : " / Unlinked"}`));
-      }
-      const edit = button("Edit item and payments", () => attempt(() => openEditor(item.id)));
-      edit.dataset.action = "edit-item";
-      content.append(
-        edit,
-        button("Delete item", () => attempt(() => {
-          if (!confirm(`Delete "${item.name}" and all its payments and installment plan?`)) return;
-          if (editor.snapshot()?.item.id === item.id && !discardAllowed()) return;
-          keepViewport(() => {
-            if (editor.snapshot()?.item.id === item.id) clearEditor();
-            commit(deleteRenovationItem(getState(), item.id));
-            render();
-            focusAction(list.querySelector("button") ?? byId("renovation-add-item"));
-          });
-        })),
-      );
-      card.append(summary, content);
-      return card;
-    };
-    syncRows(list, report.items.map((entry) => ({ ...entry, id: entry.item.id })), buildItem, editingItemId);
+    const entries = report.items.map((entry) => ({ ...entry, id: entry.item.id }));
+    syncRows(list, entries, (entry) => cardOf(entry.id) ?? buildCard(entry.id));
+    for (const entry of entries) fillCard(cardOf(entry.id), entry);
+    // The editor's item or payment was deleted elsewhere.
+    if (editor && !list.contains(editor.form)) editor = null;
+    for (const date of list.querySelectorAll('input[name="date"]')) date.max = renovationDate();
     byId("renovation-empty").hidden = report.items.length > 0;
   }
 
   function reset() {
-    addSession = null;
-    clearEditor();
-    categoriesHost.replaceChildren();
-    closeCategory();
-    categoryForm.reset();
-    message.textContent = "";
+    closeEditor();
+    list.replaceChildren();
+    addForm.reset();
+    messageOf(addForm).textContent = "";
     selectedHouse = "";
-    expanded.clear();
   }
+
   return { render, reset, selectHouse };
 }

@@ -5,7 +5,7 @@ import { saveSpendingEntry, deleteSpendingEntry, spendingReport } from "./spendi
 import { renderSpendingSummary } from "./spending-summary.js";
 import {
   cloneEntryForm, discardForm, el, focusAction, focusRowAction, formSnapshot,
-  iconButton, keepViewport, syncRows, syncSelectOptions,
+  iconButton, keepViewport, setIconButton, syncRows, syncSelectOptions,
 } from "./ui.js";
 
 export function setupSpending({ getState, commit, newId }) {
@@ -65,7 +65,7 @@ export function setupSpending({ getState, commit, newId }) {
     for (const name of ["date", "categoryId", "amount", "description"]) {
       editForm.elements.namedItem(name).value = entry[name];
     }
-    editForm.querySelector('button[type="submit"]').textContent = "Save";
+    setIconButton(editForm.querySelector('button[type="submit"]'), "save", "Save");
     const id = entry.id;
     editForm.addEventListener("input", () => clearValidity(editForm));
     editForm.addEventListener("submit", (event) => {

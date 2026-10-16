@@ -29,6 +29,15 @@ export function iconButton({ name, label, className = "", onClick }) {
   return button;
 }
 
+// Turns an existing button into an icon-only button that keeps its accessible name.
+export function setIconButton(button, name, label) {
+  button.classList.add("icon-btn");
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.replaceChildren(icon(name));
+  return button;
+}
+
 export function syncSelectOptions(select, options) {
   if (
     select.options.length === options.length &&
@@ -69,6 +78,22 @@ export function cloneEntryForm(template) {
 export function formSnapshot(form) {
   return JSON.stringify([...form.elements].filter((node) => node.name)
     .map((node) => [node.name, node.value, node.checked]));
+}
+
+// A field that fails validation inside a closed "More options" opens it, so the browser can show and focus it.
+export function revealInvalid(form) {
+  form.addEventListener("invalid", (event) => {
+    const panel = event.target.closest("details");
+    if (panel && form.contains(panel)) panel.open = true;
+  }, true);
+}
+
+// Opens "More options" only when one of its fields holds a value.
+export function syncMoreOptions(form) {
+  for (const panel of form.querySelectorAll("details.more")) {
+    panel.open = [...panel.querySelectorAll("input, select, textarea")]
+      .some((control) => control.type === "checkbox" ? control.checked : control.value !== "");
+  }
 }
 
 export function discardForm(form, baseline) {

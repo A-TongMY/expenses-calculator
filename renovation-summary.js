@@ -1,25 +1,21 @@
 import { money } from "./format.js";
 import { el } from "./ui.js";
 
+const TILES = [
+  ["Budget", "budget"], ["Actual cost", "actualCost"], ["Paid", "paid"],
+  ["Outstanding", "outstanding"], ["Due this month", "due"], ["Overdue", "overdue"],
+];
+const SHOWN_WHEN_ABOVE_ZERO = new Set(["due", "overdue"]);
+
 export function renderRenovationSummary(container, report) {
   const { totals } = report;
   const stats = el("dl", "stats");
-  for (const [label, key] of [
-    ["Budgeted total", "budgeted"], ["Expected total", "expected"],
-    ["Actual total cost", "actualCost"], ["Paid", "paid"],
-    ["Actual outstanding", "outstanding"], ["Due this month", "due"],
-    ["Overdue", "overdue"], ["Unscheduled actual balance", "unscheduled"],
-  ]) {
-    const tile = el("div", `stat${key === "expected" ? " hero" : ""}`);
+  for (const [label, key] of TILES) {
+    if (SHOWN_WHEN_ABOVE_ZERO.has(key) && !(totals[key] > 0)) continue;
+    const tile = el("div", `stat${key === "overdue" ? " warn" : ""}`);
+    tile.dataset.key = key;
     tile.append(el("dt", "", label), el("dd", "", money.format(totals[key])));
     stats.append(tile);
   }
-  const comparison = totals.gap === null
-    ? "No items with both budget and actual cost to compare."
-    : `Budget versus actual: ${money.format(totals.comparedBudget)} budget / ${money.format(totals.comparedActual)} actual (${money.format(totals.gap)} gap).`;
-  container.replaceChildren(
-    stats,
-    el("p", "note", `${totals.unbudgetedCount} item(s) not budgeted. ${comparison}`),
-    el("p", "note", "Outstanding includes only known actual costs. Due and overdue are parts of outstanding, not extra costs."),
-  );
+  container.replaceChildren(stats);
 }

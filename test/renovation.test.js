@@ -5,234 +5,251 @@ import { renovationMonth } from "../renovation-calendar.js";
 import { projection } from "../calc.js";
 
 const domain = await import("../renovation.js").catch(() => null);
+const TODAY = "2026-10-14";
+const pay = (id, amount, date = TODAY, kind = "payment") =>
+  ({ id, itemId: "cabinets", date, amount, kind });
+
 test("the renovation domain exists", () => assert.ok(domain));
 
 test("money uses exact sen and rejects invalid precision and range", () => {
   assert.equal(domain.toRenovationSen(0.29), 29);
   assert.equal(domain.toRenovationSen(1000000000), 100000000000);
-  for (const value of [1.001, -1, Infinity, NaN, "1", 1000000001]) {
+  for (const value of [1.001, -1, Infinity, NaN, "1", 1000000001, Symbol("x"), 1n]) {
     assert.throws(() => domain.toRenovationSen(value), RangeError);
   }
 });
 
-test("money rejects nonnumeric primitive inputs with the documented validation error", () => {
-  assert.throws(() => domain.toRenovationSen(Symbol("amount")), RangeError);
-  assert.throws(() => domain.toRenovationSen(1n), RangeError);
+test("payments fill the oldest installment first and deposits never fill installments", () => {
+  const plan = { startMonth: "2026-10", amount: 1000, count: 3 };
+  const rows = domain.allocateInstallments(plan, [
+    pay("b", 900, "2026-10-14"), pay("a", 600, "2026-10-01"), pay("d", 5000, TODAY, "deposit"),
+  ], "2026-11");
+  assert.deepEqual(rows, [
+    { month: "2026-10", amount: 1000, covered: 1000, remaining: 0, dueStatus: "paid" },
+    { month: "2026-11", amount: 1000, covered: 500, remaining: 500, dueStatus: "due" },
+    { month: "2026-12", amount: 1000, covered: 0, remaining: 1000, dueStatus: "upcoming" },
+  ]);
+  const late = domain.allocateInstallments(plan, [pay("a", 400)], "2027-01");
+  assert.deepEqual(late.map((row) => [row.covered, row.dueStatus]),
+    [[400, "overdue"], [0, "overdue"], [0, "overdue"]]);
 });
 
-test("canonical category and item names must be trimmed", () => {
-  const category = fixture();
-  category.renovationCategories[0].name = " Kitchen";
-  assert.equal(domain.isValidRenovationState(category, "2026-10-14"), false);
-  const item = fixture();
-  item.renovationItems[0].name = "Cabinets ";
-  assert.equal(domain.isValidRenovationState(item, "2026-10-14"), false);
+test("allocation beyond every installment only reduces the balance", () => {
+  const plan = { startMonth: "2026-10", amount: 100, count: 2 };
+  const rows = domain.allocateInstallments(plan, [pay("a", 250)], "2026-10");
+  assert.deepEqual(rows.map((row) => row.remaining), [0, 0]);
 });
 
-test("deposits reduce outstanding and partial plans show unscheduled balance", () => {
+test("allocation sums exact sen without floating point drift", () => {
+  const plan = { startMonth: "2026-10", amount: 0.3, count: 1 };
+  const rows = domain.allocateInstallments(plan, [pay("a", 0.1), pay("b", 0.2)], "2026-10");
+  assert.equal(rows[0].remaining, 0);
+  assert.equal(rows[0].dueStatus, "paid");
+});
+
+test("report shows budget, actual, paid, outstanding, due and overdue", () => {
   const state = fixture();
-  const report = domain.renovationReport(state, "h1", "2026-10");
-  assert.equal(report.totals.actualCost, 12000);
-  assert.equal(report.totals.paid, 2000);
-  assert.equal(report.totals.outstanding, 10000);
-  assert.equal(report.totals.scheduledRemaining, 10000);
-  assert.equal(report.totals.unscheduled, 0);
-  assert.equal(report.totals.due, 1000);
-  assert.equal(report.totals.overdue, 0);
-  state.renovationItems[0].installmentPlan.count = 5;
-  assert.equal(domain.renovationReport(state, "h1", "2026-10").totals.unscheduled, 5000);
-});
-
-test("linked partial payments and rollover never automatically increase paid", () => {
-  const state = fixture();
-  state.renovationPayments.push({
-    id: "oct", itemId: "cabinets", date: "2026-10-14",
-    amount: 400, kind: "payment", installmentMonth: "2026-10",
-  });
+  state.renovationPayments.push(pay("p1", 1500));
   const october = domain.renovationReport(state, "h1", "2026-10");
+  assert.deepEqual(october.totals, {
+    budget: 10000, actualCost: 12000, paid: 3500, outstanding: 8500, due: 0, overdue: 0,
+  });
+  assert.equal(october.items[0].covered, 1);
   const november = domain.renovationReport(state, "h1", "2026-11");
-  assert.equal(october.totals.paid, 2400);
-  assert.equal(october.totals.outstanding, 9600);
-  assert.equal(october.totals.due, 600);
-  assert.equal(november.totals.paid, 2400);
-  assert.equal(november.totals.overdue, 600);
-  assert.equal(november.totals.due, 1000);
-  assert.equal(october.items[0].installments[0].paymentStatus, "partial");
+  assert.equal(november.totals.due, 500);
+  const december = domain.renovationReport(state, "h1", "2026-12");
+  assert.equal(december.totals.overdue, 500);
+  assert.equal(december.totals.due, 1000);
+  assert.equal(december.totals.paid, 3500);
 });
 
-test("mixed expected costs compare only budgeted actual items", () => {
+test("report lists payments by date then id and has no categories", () => {
   const state = fixture();
-  state.renovationItems.push(
-    { id: "paint", houseId: "h1", categoryId: "kitchen", name: "Painting", budget: 3000 },
-    { id: "extra", houseId: "h1", categoryId: "kitchen", name: "Extra", actualCost: 100 },
-  );
-  const { totals } = domain.renovationReport(state, "h1", "2026-10");
-  assert.equal(totals.budgeted, 13000);
-  assert.equal(totals.expected, 15100);
-  assert.equal(totals.actualCost, 12100);
-  assert.equal(totals.unbudgetedCount, 1);
-  assert.equal(totals.gap, 2000);
-  assert.equal(totals.comparedBudget, 10000);
-  assert.equal(totals.comparedActual, 12000);
-});
-
-test("explicit zero actual is not replaced by a budget", () => {
-  const state = fixture();
-  state.renovationItems[0] = {
-    id: "cabinets", houseId: "h1", categoryId: "kitchen", name: "Cabinets",
-    budget: 100, actualCost: 0,
-  };
-  state.renovationPayments = [];
-  assert.equal(domain.renovationReport(state, "h1", "2026-10").totals.expected, 0);
-  delete state.renovationItems[0].actualCost;
+  state.renovationPayments.push(pay("z", 1, "2026-10-02"), pay("a", 1, "2026-10-02"));
   const report = domain.renovationReport(state, "h1", "2026-10");
-  assert.equal(report.items[0].outstanding, null);
-  assert.equal(report.totals.gap, null);
+  assert.deepEqual(report.items[0].payments.map(({ id }) => id), ["deposit", "a", "z"]);
+  assert.equal("categories" in report, false);
 });
 
-test("house-specific categories and reports do not mix matching names", () => {
+test("items without actual cost count budget only and have no outstanding", () => {
+  const state = fixture();
+  state.renovationItems.push({ id: "paint", houseId: "h1", name: "Painting", budget: 3000 });
+  const report = domain.renovationReport(state, "h1", "2026-10");
+  assert.equal(report.totals.budget, 13000);
+  assert.equal(report.totals.actualCost, 12000);
+  assert.equal(report.items[1].outstanding, null);
+  assert.equal(report.items[1].actualCost, null);
+});
+
+test("reports are scoped to one house", () => {
   const state = fixture();
   state.houses.push({ ...state.houses[0], id: "h2", name: "House Two" });
-  state.renovationCategories.push({ id: "k2", houseId: "h2", name: "Kitchen" });
-  state.renovationItems.push({
-    id: "i2", houseId: "h2", categoryId: "k2", name: "Cabinets", actualCost: 50,
-  });
+  state.renovationItems.push({ id: "i2", houseId: "h2", name: "Cabinets", actualCost: 50 });
   assert.equal(domain.renovationReport(state, "h2", "2026-10").totals.actualCost, 50);
   assert.equal(domain.renovationReport(state, "h1", "2026-10").totals.actualCost, 12000);
 });
 
-test("financial and relational invalid states are rejected", () => {
+test("invalid states are rejected", () => {
   const changes = [
-    (s) => { s.renovationCategories = null; },
-    (s) => { s.renovationCategories[0].houseId = "missing"; },
-    (s) => { s.renovationItems[0].categoryId = "missing"; },
+    (s) => { s.renovationItems = null; },
     (s) => { s.renovationItems[0].houseId = "other"; },
-    (s) => { s.renovationItems[0].actualCost = 100; },
+    (s) => { s.renovationItems[0].name = " Cabinets"; },
     (s) => { s.renovationItems[0].budget = 1.001; },
+    (s) => { delete s.renovationItems[0].budget; delete s.renovationItems[0].actualCost; delete s.renovationItems[0].installmentPlan; s.renovationPayments = []; },
     (s) => { s.renovationItems[0].installmentPlan.count = 601; },
     (s) => { s.renovationItems[0].installmentPlan.startMonth = "9999-12"; },
-    (s) => { s.renovationItems[0].installmentPlan.amount = 2000; },
+    (s) => { s.renovationItems[0].installmentPlan.amount = 1001; },
     (s) => { delete s.renovationItems[0].actualCost; },
     (s) => { s.renovationPayments[0].date = "2026-10-15"; },
     (s) => { s.renovationPayments[0].date = "2026-02-29"; },
     (s) => { s.renovationPayments[0].amount = 0; },
     (s) => { s.renovationPayments[0].kind = "other"; },
-    (s) => { s.renovationPayments[0].installmentMonth = "2027-12"; },
-    (s) => { s.renovationPayments[0].installmentMonth = "2026-10"; },
+    (s) => { s.renovationPayments[0].itemId = "missing"; },
     (s) => { s.renovationItems.push({ ...s.renovationItems[0] }); },
   ];
-  assert.equal(domain.isValidRenovationState(fixture(), "2026-10-14"), true);
+  assert.equal(domain.isValidRenovationState(fixture(), TODAY), true);
   for (const change of changes) {
     const state = fixture();
     change(state);
-    assert.equal(domain.isValidRenovationState(state, "2026-10-14"), false);
+    assert.equal(domain.isValidRenovationState(state, TODAY), false, change.toString());
   }
 });
 
-test("list and text limits are enforced", () => {
+test("deposits plus the plan total may equal but not exceed actual cost", () => {
   const state = fixture();
-  state.renovationItems[0].notes = "x".repeat(501);
-  assert.equal(domain.isValidRenovationState(state, "2026-10-14"), false);
-  delete state.renovationItems[0].notes;
-  state.renovationCategories = Array.from({ length: 2001 }, (_, index) => ({
-    id: String(index), houseId: "h1", name: "Category",
-  }));
-  assert.equal(domain.isValidRenovationState(state, "2026-10-14"), false);
+  assert.equal(domain.isValidRenovationState(state, TODAY), true);
+  state.renovationPayments[0].amount = 2000.01;
+  assert.equal(domain.isValidRenovationState(state, TODAY), false);
 });
 
-test("unlinking and schedule adjustment commits atomically without changing paid", () => {
+test("payments beyond the plan are allowed up to actual cost", () => {
   const state = fixture();
-  state.renovationPayments.push({
-    id: "oct", itemId: "cabinets", date: "2026-10-14",
-    amount: 1000, kind: "payment", installmentMonth: "2026-10",
-  });
-  const item = {
-    ...state.renovationItems[0],
-    installmentPlan: { startMonth: "2026-11", amount: 1000, count: 9 },
-  };
-  const payments = state.renovationPayments.map(({ installmentMonth, ...payment }) => payment);
-  const next = domain.saveRenovationItem(state, item, payments, "2026-10-14");
-  assert.equal(domain.renovationReport(next, "h1", "2026-10").totals.paid, 3000);
-  assert.equal(domain.renovationReport(next, "h1", "2026-10").totals.outstanding, 9000);
-  assert.equal(state.renovationPayments[1].installmentMonth, "2026-10");
-  item.name = "Changed caller draft";
-  assert.equal(next.renovationItems[0].name, "Cabinets");
+  state.renovationPayments.push(pay("p1", 10000));
+  assert.equal(domain.isValidRenovationState(state, TODAY), true);
+  state.renovationPayments.push(pay("p2", 0.01));
+  assert.equal(domain.isValidRenovationState(state, TODAY), false);
 });
 
-test("allocated installments cannot be removed or changed without unlinking", () => {
+test("list, name and notes limits accept the boundary and reject excess", () => {
   const state = fixture();
-  state.renovationPayments.push({
-    id: "oct", itemId: "cabinets", date: "2026-10-14",
-    amount: 1000, kind: "payment", installmentMonth: "2026-10",
-  });
-  assert.throws(() => domain.saveRenovationItem(state, {
-    ...state.renovationItems[0],
-    installmentPlan: { startMonth: "2026-11", amount: 1000, count: 9 },
-  }, state.renovationPayments, "2026-10-14"), /unlink/i);
-  assert.throws(() => domain.saveRenovationItem(state, {
-    ...state.renovationItems[0],
-    installmentPlan: { startMonth: "2026-10", amount: 900, count: 10 },
-  }, state.renovationPayments, "2026-10-14"), /unlink/i);
+  state.renovationItems[0].name = "x".repeat(80);
+  state.renovationItems[0].notes = "x".repeat(500);
+  assert.equal(domain.isValidRenovationState(state, TODAY), true);
+  state.renovationItems[0].notes += "x";
+  assert.equal(domain.isValidRenovationState(state, TODAY), false);
+
+  const items = fixture();
+  items.renovationItems.push(...Array.from({ length: 1999 }, (_, index) => ({
+    id: `item-${index}`, houseId: "h1", name: "Item", budget: 0,
+  })));
+  assert.equal(domain.isValidRenovationState(items, TODAY), true);
+  items.renovationItems.push({ id: "overflow", houseId: "h1", name: "Item", budget: 0 });
+  assert.equal(domain.isValidRenovationState(items, TODAY), false);
 });
 
-test("extra unlinked payments require simultaneous plan adjustment", () => {
+test("saving an item adds or edits it and always keeps the existing plan", () => {
   const state = fixture();
-  const payments = [...state.renovationPayments, {
-    id: "extra", itemId: "cabinets", date: "2026-10-14", amount: 1000, kind: "payment",
-  }];
-  assert.throws(() => domain.saveRenovationItem(
-    state, state.renovationItems[0], payments, "2026-10-14",
-  ), /scheduled|plan/i);
-  const next = domain.saveRenovationItem(state, {
-    ...state.renovationItems[0],
-    installmentPlan: { startMonth: "2026-10", amount: 1000, count: 9 },
-  }, payments, "2026-10-14");
-  assert.equal(domain.renovationReport(next, "h1", "2026-10").totals.unscheduled, 0);
+  const added = domain.saveRenovationItem(state,
+    { id: "paint", houseId: "h1", name: "Painting", budget: 3000 }, TODAY);
+  assert.equal(added.renovationItems.length, 2);
+  assert.equal(state.renovationItems.length, 1);
+  const draft = { id: "cabinets", houseId: "h1", name: "Kitchen cabinets", budget: 11000, actualCost: 12000 };
+  const edited = domain.saveRenovationItem(state, draft, TODAY);
+  assert.equal(edited.renovationItems[0].name, "Kitchen cabinets");
+  assert.deepEqual(edited.renovationItems[0].installmentPlan,
+    { startMonth: "2026-10", amount: 1000, count: 10 });
+  draft.name = "Changed caller draft";
+  assert.equal(edited.renovationItems[0].name, "Kitchen cabinets");
 });
 
-test("referenced houses and categories are guarded and item deletion is scoped", () => {
+test("item errors name the item and leave state unchanged", () => {
   const state = fixture();
-  state.renovationItems.push({
-    id: "paint", houseId: "h1", categoryId: "kitchen", name: "Painting", budget: 3000,
-  });
-  assert.throws(() => domain.assertHouseDeletionAllowed(state, "h1"), /renovation/i);
-  assert.throws(() => domain.deleteRenovationCategory(state, "kitchen"), /item/i);
-  const next = domain.deleteRenovationItem(state, "cabinets");
-  assert.deepEqual(next.renovationPayments, []);
-  assert.equal(next.renovationItems[0].id, "paint");
+  const before = structuredClone(state);
+  assert.throws(() => domain.saveRenovationItem(state,
+    { id: "cabinets", houseId: "h1", name: "Cabinets", budget: 10000 }, TODAY), /^RangeError: Cabinets: /);
+  assert.throws(() => domain.saveRenovationItem(state,
+    { id: "cabinets", houseId: "h1", name: "Cabinets", actualCost: 11000 }, TODAY), /Cabinets: .*exceed/i);
+  assert.throws(() => domain.saveRenovationItem(state,
+    { id: "cabinets", houseId: "h2", name: "Cabinets", actualCost: 12000 }, TODAY), /another house/);
+  assert.deepEqual(state, before);
+});
+
+test("setting and removing a plan saves immediately and enforces the deposit rule", () => {
+  const state = fixture();
+  const plan = { startMonth: "2026-11", amount: 500, count: 20 };
+  const next = domain.setInstallmentPlan(state, "cabinets", plan, TODAY);
+  assert.deepEqual(next.renovationItems[0].installmentPlan, plan);
+  plan.count = 1;
+  assert.equal(next.renovationItems[0].installmentPlan.count, 20);
+  const removed = domain.setInstallmentPlan(next, "cabinets", null, TODAY);
+  assert.equal("installmentPlan" in removed.renovationItems[0], false);
+  assert.throws(() => domain.setInstallmentPlan(state, "cabinets",
+    { startMonth: "2026-11", amount: 1000, count: 11 }, TODAY), /Cabinets: Deposits plus/);
+  assert.throws(() => domain.setInstallmentPlan(state, "missing", null, TODAY), /no longer exists/);
+});
+
+test("a plan requires an actual cost", () => {
+  const state = fixture();
+  state.renovationItems.push({ id: "paint", houseId: "h1", name: "Painting", budget: 3000 });
+  assert.throws(() => domain.setInstallmentPlan(state, "paint",
+    { startMonth: "2026-11", amount: 100, count: 2 }, TODAY), /Painting: /);
+});
+
+test("payments are added, edited and deleted one at a time", () => {
+  const state = fixture();
+  const added = domain.saveRenovationPayment(state, pay("p1", 1500), TODAY);
+  assert.equal(domain.renovationReport(added, "h1", "2026-10").totals.paid, 3500);
+  const edited = domain.saveRenovationPayment(added, pay("p1", 500), TODAY);
+  assert.equal(domain.renovationReport(edited, "h1", "2026-10").totals.paid, 2500);
+  const deleted = domain.deleteRenovationPayment(edited, "p1", TODAY);
+  assert.deepEqual(deleted.renovationPayments, state.renovationPayments);
   assert.equal(state.renovationPayments.length, 1);
-  assert.throws(() => domain.assertHouseDeletionAllowed({
-    ...next, renovationItems: [],
-  }, "h1"), /categor/i);
+  assert.throws(() => domain.deleteRenovationPayment(state, "missing", TODAY), /no longer exists/);
 });
 
-test("category renames propagate while ownership changes are rejected", () => {
+test("payment errors name the item and leave state unchanged", () => {
   const state = fixture();
-  const next = domain.saveRenovationCategory(state, {
-    id: "kitchen", houseId: "h1", name: "Kitchen and dining",
-  });
-  assert.equal(domain.renovationReport(next, "h1").categories[0].name, "Kitchen and dining");
-  assert.throws(() => domain.saveRenovationCategory(state, {
-    id: "kitchen", houseId: "other", name: "Kitchen",
-  }), /house/i);
+  const before = structuredClone(state);
+  assert.throws(() => domain.saveRenovationPayment(state, pay("p1", 10000.01), TODAY), /Cabinets: .*exceed/i);
+  assert.throws(() => domain.saveRenovationPayment(state, pay("p1", 1, "2026-10-15"), TODAY), /Cabinets: /);
+  assert.throws(() => domain.saveRenovationPayment(state, pay("p1", 1, TODAY, "deposit"), TODAY), /Cabinets: Deposits plus/);
+  state.renovationItems.push({ id: "paint", houseId: "h1", name: "Painting", actualCost: 100 });
+  const moved = { ...state.renovationPayments[0], itemId: "paint" };
+  assert.throws(() => domain.saveRenovationPayment(state, moved, TODAY), /cannot be moved to another item/);
+  state.renovationItems.pop();
+  assert.deepEqual(state, before);
 });
 
-test("multiple partial payments fully settle one installment without over-allocation", () => {
+test("deleting an item removes only its payments", () => {
   const state = fixture();
-  state.renovationPayments.push(
-    { id: "part1", itemId: "cabinets", date: "2026-10-14", amount: 400, kind: "payment", installmentMonth: "2026-10" },
-    { id: "part2", itemId: "cabinets", date: "2026-10-14", amount: 600, kind: "payment", installmentMonth: "2026-10" },
-  );
-  const report = domain.renovationReport(state, "h1", "2026-10");
-  assert.equal(report.totals.paid, 3000);
-  assert.equal(report.totals.outstanding, 9000);
-  assert.equal(report.totals.due, 0);
-  assert.equal(report.items[0].installments[0].paymentStatus, "paid");
-  state.renovationPayments.push({
-    id: "excess", itemId: "cabinets", date: "2026-10-14",
-    amount: 0.01, kind: "payment", installmentMonth: "2026-10",
-  });
-  assert.equal(domain.isValidRenovationState(state, "2026-10-14"), false);
+  state.renovationItems.push({ id: "paint", houseId: "h1", name: "Painting", actualCost: 100 });
+  state.renovationPayments.push({ id: "pp", itemId: "paint", date: TODAY, amount: 100, kind: "payment" });
+  const next = domain.deleteRenovationItem(state, "cabinets", TODAY);
+  assert.deepEqual(next.renovationItems.map(({ id }) => id), ["paint"]);
+  assert.deepEqual(next.renovationPayments.map(({ id }) => id), ["pp"]);
+  assert.equal(state.renovationPayments.length, 2);
+  assert.throws(() => domain.deleteRenovationItem(state, "missing", TODAY), /no longer exists/);
+});
+
+test("a house with renovation items cannot be deleted", () => {
+  const state = fixture();
+  assert.throws(() => domain.assertHouseDeletionAllowed(state, "h1"), /renovation/i);
+  assert.doesNotThrow(() => domain.assertHouseDeletionAllowed({ ...state, renovationItems: [] }, "h1"));
+});
+
+test("category operations no longer exist", () => {
+  assert.equal(domain.saveRenovationCategory, undefined);
+  assert.equal(domain.deleteRenovationCategory, undefined);
+});
+
+test("Malaysia month rollover changes due and overdue without creating payments", () => {
+  const state = fixture();
+  const october = domain.renovationReport(state, "h1", renovationMonth(new Date("2026-10-31T15:59:59Z")));
+  const november = domain.renovationReport(state, "h1", renovationMonth(new Date("2026-10-31T16:00:00Z")));
+  assert.equal(october.totals.overdue, 0);
+  assert.equal(october.totals.due, 1000);
+  assert.equal(november.totals.overdue, 1000);
+  assert.equal(november.totals.paid, 2000);
 });
 
 test("exactly 600 installments are supported with the correct final month", () => {
@@ -241,110 +258,12 @@ test("exactly 600 installments are supported with the correct final month", () =
   const report = domain.renovationReport(state, "h1", "2026-10");
   assert.equal(report.items[0].installments.length, 600);
   assert.equal(report.items[0].installments[599].month, "2076-09");
-  assert.equal(report.totals.scheduledRemaining, 6000);
-  assert.equal(report.totals.unscheduled, 4000);
 });
 
-test("each list accepts exactly 2000 records and rejects the next record", () => {
-  const categories = fixture();
-  categories.renovationCategories.push(...Array.from({ length: 1999 }, (_, index) => ({
-    id: `category-${index}`, houseId: "h1", name: "Category",
-  })));
-  assert.equal(domain.isValidRenovationState(categories, "2026-10-14"), true);
-  categories.renovationCategories.push({ id: "overflow", houseId: "h1", name: "Category" });
-  assert.equal(domain.isValidRenovationState(categories, "2026-10-14"), false);
-
-  const items = fixture();
-  items.renovationItems.push(...Array.from({ length: 1999 }, (_, index) => ({
-    id: `item-${index}`, houseId: "h1", categoryId: "kitchen", name: "Item", budget: 0,
-  })));
-  assert.equal(domain.isValidRenovationState(items, "2026-10-14"), true);
-  items.renovationItems.push({ id: "overflow", houseId: "h1", categoryId: "kitchen", name: "Item", budget: 0 });
-  assert.equal(domain.isValidRenovationState(items, "2026-10-14"), false);
-
-  const payments = fixture();
-  payments.renovationPayments = Array.from({ length: 2000 }, (_, index) => ({
-    id: `payment-${index}`, itemId: "cabinets", date: "2026-10-14", amount: 0.01, kind: "payment",
-  }));
-  assert.equal(domain.isValidRenovationState(payments, "2026-10-14"), true);
-  payments.renovationPayments.push({
-    id: "overflow", itemId: "cabinets", date: "2026-10-14", amount: 0.01, kind: "payment",
-  });
-  assert.equal(domain.isValidRenovationState(payments, "2026-10-14"), false);
-});
-
-test("name and notes limits accept the boundary and reject excess", () => {
-  const state = fixture();
-  state.renovationItems[0].name = "x".repeat(80);
-  state.renovationItems[0].notes = "x".repeat(500);
-  assert.equal(domain.isValidRenovationState(state, "2026-10-14"), true);
-  state.renovationItems[0].name += "x";
-  assert.equal(domain.isValidRenovationState(state, "2026-10-14"), false);
-});
-
-test("removing a plan with staged unlinks preserves payments as unscheduled balance", () => {
-  const state = fixture();
-  state.renovationPayments.push({
-    id: "oct", itemId: "cabinets", date: "2026-10-14",
-    amount: 400, kind: "payment", installmentMonth: "2026-10",
-  });
-  const { installmentPlan, ...item } = state.renovationItems[0];
-  const payments = state.renovationPayments.map(({ installmentMonth, ...payment }) => payment);
-  const next = domain.saveRenovationItem(state, item, payments, "2026-10-14");
-  const report = domain.renovationReport(next, "h1", "2026-10");
-  assert.equal(report.totals.paid, 2400);
-  assert.equal(report.totals.unscheduled, 9600);
-  assert.deepEqual(report.items[0].installments, []);
-  assert.equal(state.renovationPayments[1].installmentMonth, "2026-10");
-});
-
-test("editing and deleting payments recalculates balances without changing actual cost", () => {
-  const state = fixture();
-  const edited = domain.saveRenovationItem(state, state.renovationItems[0], [{
-    ...state.renovationPayments[0], amount: 1100,
-  }], "2026-10-14");
-  assert.equal(domain.renovationReport(edited, "h1").totals.unscheduled, 900);
-  const removed = domain.saveRenovationItem(edited, edited.renovationItems[0], [], "2026-10-14");
-  const report = domain.renovationReport(removed, "h1");
-  assert.equal(report.totals.paid, 0);
-  assert.equal(report.totals.actualCost, 12000);
-  assert.equal(report.totals.outstanding, 12000);
-  assert.equal(report.totals.unscheduled, 2000);
-});
-
-test("deleting one item preserves another item's payment records", () => {
-  const state = fixture();
-  state.renovationItems.push({
-    id: "paint", houseId: "h1", categoryId: "kitchen", name: "Painting", actualCost: 100,
-  });
-  state.renovationPayments.push({
-    id: "paint-payment", itemId: "paint", date: "2026-10-14", amount: 100, kind: "payment",
-  });
-  const next = domain.deleteRenovationItem(state, "cabinets", "2026-10-14");
-  assert.deepEqual(next.renovationPayments, [{
-    id: "paint-payment", itemId: "paint", date: "2026-10-14", amount: 100, kind: "payment",
-  }]);
-  assert.equal(next.renovationItems[0].id, "paint");
-  assert.equal(state.renovationPayments.length, 2);
-});
-
-test("Malaysia month rollover changes overdue without creating payments", () => {
-  const state = fixture();
-  const october = domain.renovationReport(state, "h1", renovationMonth(new Date("2026-10-31T15:59:59Z")));
-  const november = domain.renovationReport(state, "h1", renovationMonth(new Date("2026-10-31T16:00:00Z")));
-  assert.equal(october.totals.overdue, 0);
-  assert.equal(november.totals.overdue, 1000);
-  assert.equal(october.totals.paid, 2000);
-  assert.equal(november.totals.paid, 2000);
-  assert.equal(state.renovationPayments.length, 1);
-});
-
-test("renovation budgets, actuals, deposits and plans do not change Expenses projections", () => {
+test("renovation does not change Expenses projections", () => {
   const state = fixture();
   state.income = 5000;
   const months = projection(state, "2026-10");
   assert.equal(months[0].best, 5000);
-  assert.equal(months[0].worst, 5000);
-  assert.equal(months[1].best, 5000);
   assert.equal(months[1].worst, 5000);
 });

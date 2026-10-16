@@ -116,18 +116,18 @@ function expenseCards(report, month) {
     );
   }
   if (report.costs.length > 0) {
-    const top = report.costs.slice(0, 5);
-    const biggest = top[0].value;
-    costParts.push(
-      barRows(
-        top.map((cost) => ({
-          label: cost.name,
-          value: money.format(cost.value),
-          share: cost.value / biggest,
-          className: cost.kind === "commitment" ? "s1" : "s2",
-        })),
-      ),
-    );
+    // Bars share one scale so commitment and lifestyle rows stay comparable.
+    const biggest = report.costs[0].value;
+    for (const [kind, title, className] of [["commitment", "Commitments", "s1"], ["lifestyle", "Lifestyle", "s2"]]) {
+      const costs = report.costs.filter((cost) => cost.kind === kind);
+      if (costs.length === 0) continue;
+      const group = el("div", "bar-group");
+      group.append(
+        el("h4", "", title),
+        barRows(costs.map((cost) => ({ label: cost.name, value: money.format(cost.value), share: cost.value / biggest, className }))),
+      );
+      costParts.push(group);
+    }
   }
   if (costParts.length > 0) cards.push(card("Where income goes", ...costParts));
 
@@ -237,9 +237,11 @@ export function setupHome({ getState }) {
       const panel = el("details", "panel");
       panel.open = true;
       const heading = el("summary");
-      const link = el("a", "open-link", "Open Renovation");
+      const link = el("a", "open-link");
       link.href = `#/renovation?house=${encodeURIComponent(house.id)}`;
-      heading.append(el("span", "title", `Renovation / ${house.name}`), link);
+      link.setAttribute("aria-label", `Open Renovation for ${house.name}`);
+      link.append(icon("arrow"));
+      heading.append(icon("tools"), el("span", "title", `Renovation / ${house.name}`), link, icon("chevron", "chev"));
       const content = el("div", "panel-body cards");
       renderRenovationSummary(content, renovationReport(state, house.id, renovationMonth()));
       panel.append(heading, content);

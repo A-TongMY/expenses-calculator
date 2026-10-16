@@ -1,5 +1,5 @@
 export const emptyRenovation = () => ({
-  renovationCategories: [], renovationItems: [], renovationPayments: [],
+  renovationItems: [], renovationPayments: [],
 });
 
 export const fixture = () => ({
@@ -11,9 +11,8 @@ export const fixture = () => ({
     id: "h1", name: "House One", loan: 100000,
     ratePercent: 0, termMonths: 120, startMonth: "2026-01",
   }],
-  renovationCategories: [{ id: "kitchen", houseId: "h1", name: "Kitchen" }],
   renovationItems: [{
-    id: "cabinets", houseId: "h1", categoryId: "kitchen", name: "Cabinets",
+    id: "cabinets", houseId: "h1", name: "Cabinets",
     budget: 10000, actualCost: 12000,
     installmentPlan: { startMonth: "2026-10", amount: 1000, count: 10 },
   }],

@@ -40,7 +40,7 @@ const stateWith = (overrides) => ({
   ...overrides,
 });
 
-const backupOf = (data, schemaVersion = 8) => JSON.stringify({ schemaVersion, data });
+const backupOf = (data, schemaVersion = 9) => JSON.stringify({ schemaVersion, data });
 const legacyBackupOf = (data, schemaVersion = 6) =>
   JSON.stringify({
     schemaVersion,
@@ -92,7 +92,7 @@ test("a version 7 backup requires Spending", () => {
 });
 
 test("exporting writes the current schema version", () => {
-  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 8);
+  assert.equal(JSON.parse(exportBackup(sampleState)).schemaVersion, 9);
 });
 
 test("exporting malformed canonical lists fails rather than writing an empty list", () => {
@@ -116,7 +116,7 @@ test("importing something that is not JSON is rejected with a clear message", ()
 });
 
 test("a backup from a newer version of the app is refused", () => {
-  assert.throws(() => importBackup(backupOf(sampleState, 9)), {
+  assert.throws(() => importBackup(backupOf(sampleState, 10)), {
     message: "This backup was made by a newer version of the app and cannot be imported.",
   });
 });

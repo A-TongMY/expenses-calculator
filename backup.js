@@ -10,18 +10,27 @@ import {
 } from "./rules.js";
 import { isValidRenovationState } from "./renovation.js";
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 const SPENDING_SINCE = 7;
 const RENOVATION_SINCE = 8;
+const FLAT_RENOVATION_SINCE = 9;
 const LIFESTYLE_SINCE = 2;
 const CHECK_INS_SINCE = 5;
 const HOUSES_SINCE = 6;
 const SPENDING_FIELDS = ["id", "date", "categoryId", "amount", "description"];
-const RENOVATION_CATEGORY_FIELDS = ["id", "houseId", "name"];
-const RENOVATION_ITEM_FIELDS = ["id", "houseId", "categoryId", "name", "budget", "actualCost", "notes"];
-const RENOVATION_PAYMENT_FIELDS = ["id", "itemId", "date", "amount", "kind", "installmentMonth"];
-const emptyRenovation = () => ({
-  renovationCategories: [], renovationItems: [], renovationPayments: [],
+const RENOVATION_ITEM_FIELDS = ["id", "houseId", "name", "budget", "actualCost", "notes"];
+const RENOVATION_PAYMENT_FIELDS = ["id", "itemId", "date", "amount", "kind"];
+const emptyRenovation = () => ({ renovationItems: [], renovationPayments: [] });
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const mapRecords = (list, change) =>
+  Array.isArray(list) ? list.map((entry) => isRecord(entry) ? change(entry) : entry) : list;
+
+// Schema 8 had categories and payments linked to installments. A linked deposit becomes a
+// payment so it keeps covering its installment and the state stays valid under schema 9 rules.
+const flattenRenovation = (data) => ({
+  renovationItems: mapRecords(data?.renovationItems, ({ categoryId, ...item }) => item),
+  renovationPayments: mapRecords(data?.renovationPayments, ({ installmentMonth, ...payment }) =>
+    installmentMonth !== undefined && payment.kind === "deposit" ? { ...payment, kind: "payment" } : payment),
 });
 
 const COMMITMENT_FIELDS = ["id", "name", "amount", "everyMonths", "startMonth", "endMonth", "scenario"];
@@ -56,7 +65,8 @@ const upgrade = (data, version) => ({
   checkIns: version < CHECK_INS_SINCE || version >= SPENDING_SINCE ? [] : data?.checkIns,
   houses: version < HOUSES_SINCE ? [] : data?.houses,
   spending: version < SPENDING_SINCE ? [] : data?.spending,
-  ...(version < RENOVATION_SINCE ? emptyRenovation() : {}),
+  ...(version < RENOVATION_SINCE ? emptyRenovation()
+    : version < FLAT_RENOVATION_SINCE ? flattenRenovation(data) : {}),
 });
 
 const isLegacyState = (data) =>
@@ -85,7 +95,6 @@ const toCurrentState = (data) => ({
   lifestyle: data.lifestyle.map(toLifestyle),
   houses: data.houses.map(toHouse),
   spending: data.spending.map(toSpending),
-  renovationCategories: data.renovationCategories.map((category) => pick(category, RENOVATION_CATEGORY_FIELDS)),
   renovationItems: data.renovationItems.map((item) => ({
     ...pick(item, RENOVATION_ITEM_FIELDS),
     ...(item.installmentPlan !== undefined

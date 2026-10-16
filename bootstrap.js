@@ -6,7 +6,6 @@ const blankState = () => ({
   lifestyle: [],
   spending: [],
   houses: [],
-  renovationCategories: [],
   renovationItems: [],
   renovationPayments: [],
 });

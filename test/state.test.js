@@ -172,13 +172,12 @@ test("GET upgrades v6 in memory and preserves the original ETag for a conditiona
   const upgraded = JSON.parse(body.backup);
 
   assert.equal(response.status, 200);
-  assert.equal(upgraded.schemaVersion, 8);
+  assert.equal(upgraded.schemaVersion, 9);
   assert.deepEqual(Object.keys(upgraded.data).sort(), [
     "commitments",
     "houses",
     "income",
     "lifestyle",
-    "renovationCategories",
     "renovationItems",
     "renovationPayments",
     "spending",
@@ -237,9 +236,9 @@ test("GET upgrades schema 7 Spending without writes and preserves its ETag for s
   const body = await response.json();
   const upgraded = JSON.parse(body.backup);
   assert.equal(response.status, 200);
-  assert.equal(upgraded.schemaVersion, 8);
+  assert.equal(upgraded.schemaVersion, 9);
   assert.deepEqual(upgraded.data.spending, spending);
-  assert.deepEqual(upgraded.data.renovationCategories, []);
+  assert.equal("renovationCategories" in upgraded.data, false);
   assert.deepEqual(upgraded.data.renovationItems, []);
   assert.deepEqual(upgraded.data.renovationPayments, []);
   assert.equal(body.notice, null);

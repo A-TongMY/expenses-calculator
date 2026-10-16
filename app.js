@@ -25,7 +25,7 @@ import {
 } from "./storage.js";
 import {
   cloneEntryForm, discardForm, el, focusAction, focusRowAction, formSnapshot,
-  iconButton, keepViewport, rememberPanels, syncRows,
+  iconButton, keepViewport, rememberPanels, revealInvalid, setIconButton, syncMoreOptions, syncRows,
 } from "./ui.js";
 
 const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
@@ -92,7 +92,7 @@ function showNotice(message) {
 const storage = createStorageClient();
 let state = {
   income: 0, commitments: [], lifestyle: [], spending: [], houses: [],
-  renovationCategories: [], renovationItems: [], renovationPayments: [],
+  renovationItems: [], renovationPayments: [],
 };
 let saveQueue = null;
 let startupNotice = null;
@@ -251,8 +251,9 @@ function createSection(root, key, config) {
       field("cadence").value = "custom";
       field("customMonths").value = item.everyMonths;
     }
-    editForm.querySelector('[data-role="submit"]').textContent = "Save";
+    setIconButton(editForm.querySelector('[data-role="submit"]'), "save", "Save");
     editForm.setAttribute("aria-label", `Edit ${item.name}`);
+    syncMoreOptions(editForm);
     bindForm(editForm, id);
     editBaseline = formSnapshot(editForm);
     [...list.children].find((row) => row.dataset.id === id).append(editForm);
@@ -361,6 +362,7 @@ function createSection(root, key, config) {
 
   function bindForm(form, id = null) {
     const field = (name) => form.elements.namedItem(name);
+    revealInvalid(form);
     const syncCustomField = () => {
       const custom = field("cadence").value === "custom";
       form.querySelector('[data-role="custom-field"]').hidden = !custom;

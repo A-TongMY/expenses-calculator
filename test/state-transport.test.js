@@ -149,7 +149,7 @@ test("Renovation persists through SDK saves when transport drops headers", async
     ...state,
     renovationPayments: [...state.renovationPayments, {
       id: "oct", itemId: "cabinets", date: "2026-10-14",
-      amount: 400, kind: "payment", installmentMonth: "2026-10",
+      amount: 400, kind: "payment",
     }],
   };
   await client.saveState(updated);
@@ -194,7 +194,6 @@ test("import replacement followed by manual edits across modules keeps saving", 
   assert.deepEqual((await client.loadState()).state, houses);
   const renovation = {
     ...houses,
-    renovationCategories: fixture().renovationCategories,
     renovationItems: fixture().renovationItems,
     renovationPayments: fixture().renovationPayments,
   };

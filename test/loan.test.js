@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { housesOverview, loanSchedule, loanSummary, monthlyInstallment, repaysInFull } from "../loan.js";
+import { housesOverview, loanSchedule, loanSummary, loanTermLabels, monthlyInstallment, repaysInFull } from "../loan.js";
 import { isValidHouse } from "../rules.js";
 
 const house = { id: "h1", name: "Terrace", loan: 100000, ratePercent: 4, termMonths: 360, startMonth: "2024-01" };
@@ -130,4 +130,28 @@ for (const [label, change] of Object.entries(invalidHouses)) {
 
 test("a house with a price, a rate of zero and a bank installment is valid", () => {
   assert.equal(isValidHouse({ ...house, price: 120000, ratePercent: 0, installment: 400 }), true);
+});
+
+test("a higher bank installment shows the 420-month term, an earlier projected payoff and estimated payments made", () => {
+  const bank = { loan: 548499, ratePercent: 3.89, termMonths: 420, startMonth: "2023-01", installment: 2406 };
+  assert.deepEqual(loanTermLabels(bank, loanSummary(bank, "2026-10")), {
+    term: "420 months",
+    payoff: "416 payments · 4 months earlier",
+    paid: "~46 paid (estimated)",
+  });
+});
+
+test("a lower bank installment projects a later payoff", () => {
+  const low = { loan: 120000, ratePercent: 0, termMonths: 120, startMonth: "2024-01", installment: 900 };
+  assert.equal(loanTermLabels(low, loanSummary(low, "2024-01")).payoff, "134 payments · 14 months later");
+});
+
+test("a standard installment pays off on its term, so no projected payoff is shown", () => {
+  const labels = loanTermLabels(house, loanSummary(house, "2023-12"));
+  assert.deepEqual(labels, { term: "360 months", payoff: null, paid: "~0 paid (estimated)" });
+});
+
+test("a one-month difference is singular", () => {
+  const near = { loan: 12000, ratePercent: 0, termMonths: 12, startMonth: "2024-01", installment: 1100 };
+  assert.equal(loanTermLabels(near, loanSummary(near, "2024-01")).payoff, "11 payments · 1 month earlier");
 });
